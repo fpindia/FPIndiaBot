@@ -1,24 +1,13 @@
-# TLG_JoinCaptchaBot
+# FPIndiaBot
 
-<p align="center">
-    <img width="100%" height="100%" src="https://gist.githubusercontent.com/J-Rios/05d7a8fc04166fa19f31a9608033d10b/raw/32dee32a530c0a0994736fe2d02a1747478bd0e3/captchas.png">
-</p>
+A Telegram bot for the Functional Programming India community.
 
-Bot to verify if a new user, who joins a group, is a human.
-The Bot sends an image captcha for each new user, and kicks any of them that can't solve the captcha in a specified amount of time. Also, any message that contains an URL sent by a new "user" before captcha completion will be considered Spam and will be deleted.
+Telegram group - https://t.me/FPNCR
+Website - https://functionalprogramming.in
 
-## Donate
+### Originally forked from [TLG_JoinCaptchaBot](https://github.com/J-Rios/TLG_JoinCaptchaBot)
 
-Do you like this Bot? Buy me a coffee :)
-
-BuyMeACoffee:
-[https://www.buymeacoffee.com/joincaptchabot](https://www.buymeacoffee.com/joincaptchabot)
-
-Paypal:
-[https://www.paypal.me/josrios](https://www.paypal.me/josrios)
-
-BTC:
-3N9wf3FunR6YNXonquBeWammaBZVzTXTyR
+### Original documentation continues below
 
 ## Installation
 
@@ -223,3 +212,11 @@ To add support for a new language you must follow this steps:
 - Ukrainian: Vadym Zhushman (@zhushman00), [Roman (@toxi22)](https://github.com/toxi22)
 
 - Finnish: [Aminda Suomalainen (@Mikaela)](https://github.com/Mikaela)
+
+## Support the original developer (J-Rios)
+
+BuyMeACoffee:
+[https://www.buymeacoffee.com/joincaptchabot](https://www.buymeacoffee.com/joincaptchabot)
+
+Paypal:
+[https://www.paypal.me/josrios](https://www.paypal.me/josrios)

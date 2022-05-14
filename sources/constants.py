@@ -280,11 +280,14 @@ CONST = {
         "\nTurkish / Türkçe\n/language tr\n" \
         "\nUkrainian / Українську\n/language uk\n",
 
-    # Bot developer
-    "DEVELOPER": "@JoseTLG",
+    # Bot maintainer
+    "DEVELOPER": "@ajnsit",
+
+    # Bot original developer
+    "ORIG_DEVELOPER": "@JoseTLG",
 
     # Bot code repository
-    "REPOSITORY": "https://github.com/J-Rios/TLG_JoinCaptchaBot",
+    "REPOSITORY": "https://github.com/FPIndia/FPIndiaBot",
 
     # Developer Donation address
     "DEV_DONATION_ADDR": "https://www.buymeacoffee.com/joincaptchabot",
