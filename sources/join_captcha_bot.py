@@ -71,7 +71,8 @@ from tlgbotutils import (
     tlg_answer_callback_query, tlg_delete_msg, tlg_edit_msg_media,
     tlg_ban_user, tlg_kick_user, tlg_user_is_admin, tlg_leave_chat,
     tlg_restrict_user, tlg_is_valid_user_id_or_alias, tlg_is_valid_group,
-    tlg_alias_in_string, tlg_extract_members_status_change
+    tlg_alias_in_string, tlg_extract_members_status_change,
+    tlg_get_chat_member
 )
 
 from constants import (
@@ -1057,18 +1058,30 @@ def msg_nocmd(update: Update, context: CallbackContext):
         msg_text = getattr(update_msg, "caption_html", None)
     if msg_text is None:
         msg_text = getattr(update_msg, "caption", None)
+    # mentions to other groups
+    group_mentions = []
     # Check if message has a text link (embedded url in text) and get it
     msg_entities = getattr(update_msg, "entities", None)
     if msg_entities is None:
         msg_entities = []
     for entity in msg_entities:
-        url = getattr(entity, "url", None)
-        if url is not None:
-            if url != "":
-                if msg_text is None:
-                    msg_text = url
-                else:
-                    msg_text = "{} [{}]".format(msg_text, url)
+        entity_text = msg_text[entity.offset:entity.length+entity.offset]
+        printts(entity_text)
+        # Check URLs
+        if entity.type == "url":
+            if entity_text != "":
+                msg_text = "{} [{}]".format(msg_text, entity_text)
+                break
+        # Record mentions of other groups
+        elif entity.type == "mention":
+            if entity_text != "":
+                # Get chat member info
+                member_info_result = tlg_get_chat_member(bot, chat_id, entity_text)
+                printts(member_info_result)
+                if member_info_result["member"] is None:
+                    # Not a valid member, so must be a group
+                    group_mentions.append(entity_text)
+                    printts(group_mentions)
                 break
     # Get others message data
     user_id = update_msg.from_user.id
