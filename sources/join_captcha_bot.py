@@ -1071,18 +1071,19 @@ def msg_nocmd(update: Update, context: CallbackContext):
         if entity.type == "url":
             if entity_text != "":
                 msg_text = "{} [{}]".format(msg_text, entity_text)
-                break
+                continue
         # Record mentions of other groups
+        # TODO: Can't figure out how to restrict only group mentions, currently disable all mentions
         elif entity.type == "mention":
             if entity_text != "":
                 # Get chat member info
-                member_info_result = tlg_get_chat_member(bot, chat_id, entity_text)
-                printts(member_info_result)
-                if member_info_result["member"] is None:
+                # member_info_result = tlg_get_chat_member(bot, chat_id, entity_text)
+                # printts(member_info_result)
+                # if member_info_result["member"] is None:
                     # Not a valid member, so must be a group
-                    group_mentions.append(entity_text)
-                    printts(group_mentions)
-                break
+                group_mentions.append(entity_text)
+                # printts(group_mentions)
+                continue
     # Get others message data
     user_id = update_msg.from_user.id
     msg_id = update_msg.message_id
@@ -1112,7 +1113,8 @@ def msg_nocmd(update: Update, context: CallbackContext):
         lang = get_chat_config(chat_id, "Language")
         # Check for Spam (check if the message contains any URL)
         has_url = re.findall(CONST["REGEX_URLS"], msg_text)
-        if has_url:
+        has_mentions = len(group_mentions) > 0
+        if has_url or has_mentions:
             # Try to remove the message and notify detection
             delete_result = tlg_delete_msg(bot, chat_id, msg_id)
             if delete_result["error"] == "":
