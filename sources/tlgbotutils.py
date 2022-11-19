@@ -21,11 +21,15 @@ Version:
 from typing import Tuple, Optional
 
 from telegram import (
-    ChatPermissions, TelegramError, ParseMode, Poll, ChatMemberUpdated,
-    ChatMember
+    ChatPermissions, Poll, ChatMemberUpdated,
+    ChatMember, Bot
 )
 
-from telegram.utils.helpers import DEFAULT_NONE
+from telegram.constants import ParseMode
+
+from telegram.error import TelegramError
+
+from telegram._utils.defaultvalue import DEFAULT_NONE
 
 from commons import printts
 
@@ -79,7 +83,7 @@ def tlg_get_chat_members_count(bot, chat_id, timeout=None):
     return result
 
 
-def tlg_send_msg(bot, chat_id, text, parse_mode=None,
+async def tlg_send_msg(bot: Bot, chat_id, text, parse_mode=None,
     disable_web_page_preview=None, disable_notification=True,
     reply_to_message_id=None, reply_markup=None, timeout=None):
     '''Bot try to send a text message'''
@@ -91,11 +95,11 @@ def tlg_send_msg(bot, chat_id, text, parse_mode=None,
     elif parse_mode == "MARKDOWN":
         parse_mode = ParseMode.MARKDOWN_V2
     try:
-        sent_result["msg"] = bot.send_message(chat_id=chat_id, text=text,
+        sent_result["msg"] = await bot.send_message(chat_id=chat_id, text=text,
             parse_mode=parse_mode, reply_markup=reply_markup,
             disable_web_page_preview=disable_web_page_preview,
             disable_notification=disable_notification,
-            reply_to_message_id=reply_to_message_id, timeout=timeout)
+            reply_to_message_id=reply_to_message_id, read_timeout=timeout)
     except TelegramError as e:
         sent_result["error"] = str(e)
         printts("[{}] {}".format(chat_id, sent_result["error"]))
