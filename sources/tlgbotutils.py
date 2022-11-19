@@ -94,6 +94,7 @@ async def tlg_send_msg(
     disable_web_page_preview: bool = None,
     disable_notification: bool = True,
     reply_to_message_id: int = None,
+    message_thread_id: int = None,
     reply_markup=None,
     timeout: float = None,
 ):
@@ -114,6 +115,7 @@ async def tlg_send_msg(
             disable_web_page_preview=disable_web_page_preview,
             disable_notification=disable_notification,
             reply_to_message_id=reply_to_message_id,
+            message_thread_id=message_thread_id,
             read_timeout=timeout,
         )
     except TelegramError as e:

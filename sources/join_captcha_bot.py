@@ -23,6 +23,7 @@ Version:
 from platform import system as os_system
 
 from signal import signal, SIGTERM, SIGINT
+from typing import Union
 
 if os_system() != "Windows":
     from signal import SIGUSR1
@@ -43,6 +44,8 @@ from tsjson import TSjson
 from multicolorcaptcha import CaptchaGenerator
 
 from telegram import (
+    Bot,
+    Message,
     Update,
     Chat,
     InputMediaPhoto,
@@ -293,13 +296,13 @@ def get_chat_config_file(chat_id):
 ### Telegram Related Functions
 
 
-def tlg_send_msg_type_chat(bot, chat_type, chat_id, text, **kwargs_for_send_message):
+async def tlg_send_msg_type_chat(bot, chat_type, chat_id, text, **kwargs_for_send_message):
     """Send a telegram message normal or schedule to self-destruct depending
     of chat type (private chat - normal; group - selfdestruct)."""
     if chat_type == "private":
-        tlg_send_msg(bot, chat_id, text, **kwargs_for_send_message)
+        await tlg_send_msg(bot, chat_id, text, **kwargs_for_send_message)
     else:
-        tlg_send_selfdestruct_msg(bot, chat_id, text, **kwargs_for_send_message)
+        await tlg_send_selfdestruct_msg(bot, chat_id, text, **kwargs_for_send_message)
 
 
 def tlg_send_selfdestruct_msg(bot, chat_id, message, **kwargs_for_send_message):
@@ -309,23 +312,23 @@ def tlg_send_selfdestruct_msg(bot, chat_id, message, **kwargs_for_send_message):
     )
 
 
-def tlg_send_selfdestruct_msg_in(
-    bot, chat_id, message, time_delete_sec, **kwargs_for_send_message
+async def tlg_send_selfdestruct_msg_in(
+    bot: Bot, chat_id: Union[str, int], message: Message, time_delete_sec, **kwargs_for_send_message
 ):
     """Send a telegram message that will be auto-delete in specified time"""
-    sent_result = tlg_send_msg(bot, chat_id, message, **kwargs_for_send_message)
+    sent_result = await tlg_send_msg(bot, chat_id, message, **kwargs_for_send_message)
     if sent_result["msg"] is None:
         return None
     tlg_msg_to_selfdestruct_in(sent_result["msg"], time_delete_sec)
     return sent_result["msg"].message_id
 
 
-def tlg_msg_to_selfdestruct(message):
+def tlg_msg_to_selfdestruct(message: Message):
     """tlg_msg_to_selfdestruct_in() with default delete time"""
     tlg_msg_to_selfdestruct_in(message, CONST["T_DEL_MSG"])
 
 
-def tlg_msg_to_selfdestruct_in(message, time_delete_sec):
+def tlg_msg_to_selfdestruct_in(message: Message, time_delete_sec):
     """Add a telegram message to be auto-delete in specified time"""
     global to_delete_in_time_messages_list
     # Check if provided message has all necessary attributtes
@@ -344,6 +347,7 @@ def tlg_msg_to_selfdestruct_in(message, time_delete_sec):
     chat_id = message.chat_id
     user_id = message.from_user.id
     msg_id = message.message_id
+    msg_thread_id = message.message_thread_id
     t0 = time()
     # Add sent message data to to-delete messages list
     sent_msg_data = OrderedDict(
@@ -351,6 +355,7 @@ def tlg_msg_to_selfdestruct_in(message, time_delete_sec):
             ("Chat_id", None),
             ("User_id", None),
             ("Msg_id", None),
+            ("Msg_thread_id", None),
             ("time", None),
             ("delete_time", None),
         ]
@@ -358,6 +363,7 @@ def tlg_msg_to_selfdestruct_in(message, time_delete_sec):
     sent_msg_data["Chat_id"] = chat_id
     sent_msg_data["User_id"] = user_id
     sent_msg_data["Msg_id"] = msg_id
+    sent_msg_data["Msg_thread_id"] = msg_thread_id
     sent_msg_data["time"] = t0
     sent_msg_data["delete_time"] = t0 + time_delete_sec
     to_delete_in_time_messages_list.append(sent_msg_data)
@@ -638,7 +644,7 @@ def is_group_in_banned_list(chat_id):
     return False
 
 
-def allowed_in_this_group(bot, chat, member_added_by):
+async def allowed_in_this_group(bot, chat, member_added_by):
     """Check if Bot is allowed to be used in a Chat."""
     if not is_group_in_allowed_list(chat.id):
         printts("Warning: Bot added to not allowed group.")
@@ -654,7 +660,7 @@ def allowed_in_this_group(bot, chat, member_added_by):
         msg_text = CONST["NOT_ALLOW_GROUP"].format(
             CONST["BOT_OWNER"], chat.id, CONST["REPOSITORY"]
         )
-        tlg_send_msg(bot, chat.id, msg_text)
+        await tlg_send_msg(bot, chat.id, msg_text)
         return False
     if is_group_in_banned_list(chat.id):
         printts("[{}] Warning: Bot added to banned group".format(chat.id))
@@ -757,7 +763,7 @@ def chat_bot_status_change(update: Update, context: CallbackContext):
             return
 
 
-def chat_member_status_change(update: Update, context: CallbackContext):
+async def chat_member_status_change(update: Update, context: CallbackContext):
     """Get Members chats status changes (user join/leave/added/removed to/from
     group/channel) event handler. Note: if Bot is not an Admin, "chat_member"
     update won't be received."""
@@ -810,12 +816,12 @@ def chat_member_status_change(update: Update, context: CallbackContext):
         chat_link = "@{}".format(chat_link)
         save_config_property(chat_id, "Link", chat_link)
     # Ignore Admins
-    if tlg_user_is_admin(bot, join_user_id, chat_id):
+    if await tlg_user_is_admin(bot, join_user_id, chat_id):
         printts("[{}] User is an administrator.".format(chat_id))
         printts("Skipping the captcha process.")
         return
     # Ignore Members added by an Admin
-    if tlg_user_is_admin(bot, member_added_by.id, chat_id):
+    if await tlg_user_is_admin(bot, member_added_by.id, chat_id):
         printts("[{}] User has been added by an administrator.".format(chat_id))
         printts("Skipping the captcha process.")
         return
@@ -838,7 +844,7 @@ def chat_member_status_change(update: Update, context: CallbackContext):
         if join_user_id in new_users[chat_id]:
             if "msg_to_rm" in new_users[chat_id][join_user_id]:
                 for msg in new_users[chat_id][join_user_id]["msg_to_rm"]:
-                    tlg_delete_msg(bot, chat_id, msg)
+                    await tlg_delete_msg(bot, chat_id, msg)
                 new_users[chat_id][join_user_id]["msg_to_rm"].clear()
     # Ignore if the captcha protection is not enable in this chat
     captcha_enable = get_chat_config(chat_id, "Enabled")
@@ -889,8 +895,13 @@ def chat_member_status_change(update: Update, context: CallbackContext):
                 chat_id, join_user_name
             )
         )
-        sent_result = tlg_send_msg(
-            bot, chat_id, challenge_text, reply_markup=reply_markup, timeout=40
+        sent_result = await tlg_send_msg(
+            bot,
+            chat_id,
+            challenge_text,
+            reply_markup=reply_markup,
+            timeout=40,
+            message_thread_id=update.effective_message.message_thread_id,
         )
         if sent_result["msg"] is None:
             send_problem = True
@@ -903,11 +914,12 @@ def chat_member_status_change(update: Update, context: CallbackContext):
             or (num_config_poll_options(poll_options) < 2)
             or (poll_correct_option == 0)
         ):
-            tlg_send_selfdestruct_msg_in(
+            await tlg_send_selfdestruct_msg_in(
                 bot,
                 chat_id,
                 TEXT[lang]["POLL_NEW_USER_NOT_CONFIG"],
                 CONST["T_FAST_DEL_MSG"],
+                message_thread_id=update.effective_message.message_thread_id,
             )
             return
         # Remove empty strings from options list
@@ -916,12 +928,17 @@ def chat_member_status_change(update: Update, context: CallbackContext):
         poll_request_msg_text = TEXT[lang]["POLL_NEW_USER"].format(
             user_name_lrm, chat_title, timeout_str
         )
-        sent_result = tlg_send_selfdestruct_msg(bot, chat_id, poll_request_msg_text)
+        sent_result = await tlg_send_selfdestruct_msg(
+            bot,
+            chat_id,
+            poll_request_msg_text,
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         solve_poll_request_msg_id = None
         if sent_result is not None:
             solve_poll_request_msg_id = sent_result
         # Send the Poll
-        sent_result = tlg_send_poll(
+        sent_result = await tlg_send_poll(
             bot,
             chat_id,
             poll_question,
@@ -989,12 +1006,13 @@ def chat_member_status_change(update: Update, context: CallbackContext):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         # Send the image
-        sent_result = tlg_send_image(
+        sent_result = await tlg_send_image(
             bot,
             chat_id,
             open(captcha["image"], "rb"),
             img_caption,
             reply_markup=reply_markup,
+            message_thread_id=update.effective_message.message_thread_id,
         )
         if sent_result["msg"] is None:
             send_problem = True
@@ -1050,7 +1068,7 @@ def chat_member_status_change(update: Update, context: CallbackContext):
         printts(" ")
 
 
-def msg_user_joined_group(update: Update, context: CallbackContext):
+async def msg_user_joined_group(update: Update, context: CallbackContext):
     """New member join the group event handler"""
     global new_users
     # Get message data
@@ -1079,7 +1097,7 @@ def msg_user_joined_group(update: Update, context: CallbackContext):
         new_users[chat_id][join_user.id]["join_msg"] = msg_id
 
 
-def msg_notext(update: Update, context: CallbackContext):
+async def msg_notext(update: Update, context: CallbackContext):
     """All non-text messages handler."""
     bot = context.bot
     # Get message data
@@ -1128,13 +1146,19 @@ def msg_notext(update: Update, context: CallbackContext):
     # Remove send message and notify that not text messages are not allowed until solve captcha
     msg_id = update_msg.message_id
     printts("[{}] Removing non-text message sent by {}".format(chat_id, user_name))
-    tlg_delete_msg(bot, chat_id, msg_id)
+    await tlg_delete_msg(bot, chat_id, msg_id)
     lang = get_chat_config(chat_id, "Language")
     bot_msg = TEXT[lang]["NOT_TEXT_MSG_ALLOWED"].format(user_name)
-    tlg_send_selfdestruct_msg_in(bot, chat_id, bot_msg, CONST["T_FAST_DEL_MSG"])
+    await tlg_send_selfdestruct_msg_in(
+        bot,
+        chat_id,
+        bot_msg,
+        CONST["T_FAST_DEL_MSG"],
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def msg_nocmd(update: Update, context: CallbackContext):
+async def msg_nocmd(update: Update, context: CallbackContext):
     """Non-command text messages handler"""
     global new_users
     bot = context.bot
@@ -1212,7 +1236,7 @@ def msg_nocmd(update: Update, context: CallbackContext):
     url_enable = get_chat_config(chat_id, "URL_Enabled")
     if not url_enable:
         # Ignore if message comes from an Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if is_admin:
             return
         # Get Chat configured language
@@ -1243,14 +1267,26 @@ def msg_nocmd(update: Update, context: CallbackContext):
         printts("[{}] Spammer detected: {}.".format(chat_id, user_name))
         printts("[{}] Removing spam message: {}.".format(chat_id, msg_text))
         # Try to remove the message and notify detection
-        delete_result = tlg_delete_msg(bot, chat_id, msg_id)
+        delete_result = await tlg_delete_msg(bot, chat_id, msg_id)
         if delete_result["error"] == "":
             bot_msg = TEXT[lang]["SPAM_DETECTED_RM"].format(user_name)
-            tlg_send_selfdestruct_msg_in(bot, chat_id, bot_msg, CONST["T_FAST_DEL_MSG"])
+            await tlg_send_selfdestruct_msg_in(
+                bot,
+                chat_id,
+                bot_msg,
+                CONST["T_FAST_DEL_MSG"],
+                message_thread_id=update.effective_message.message_thread_id,
+            )
         # Check if message cant be removed due to not delete msg privileges
         elif delete_result["error"] == "Message can't be deleted":
             bot_msg = TEXT[lang]["SPAM_DETECTED_NOT_RM"].format(user_name)
-            tlg_send_selfdestruct_msg_in(bot, chat_id, bot_msg, CONST["T_FAST_DEL_MSG"])
+            await tlg_send_selfdestruct_msg_in(
+                bot,
+                chat_id,
+                bot_msg,
+                CONST["T_FAST_DEL_MSG"],
+                message_thread_id=update.effective_message.message_thread_id,
+            )
         else:
             printts("Message can't be deleted.")
         return
@@ -1279,9 +1315,20 @@ def msg_nocmd(update: Update, context: CallbackContext):
         bot_msg = TEXT[lang]["CAPTCHA_SOLVED"].format(user_name)
         # Send message solve message
         if rm_result_msg:
-            tlg_send_selfdestruct_msg_in(bot, chat_id, bot_msg, CONST["T_FAST_DEL_MSG"])
+            await tlg_send_selfdestruct_msg_in(
+                bot,
+                chat_id,
+                bot_msg,
+                CONST["T_FAST_DEL_MSG"],
+                message_thread_id=update.effective_message.message_thread_id,
+            )
         else:
-            tlg_send_msg(bot, chat_id, bot_msg)
+            await tlg_send_msg(
+                bot,
+                chat_id,
+                bot_msg,
+                message_thread_id=update.effective_message.message_thread_id,
+            )
         # Check for custom welcome message and send it
         welcome_msg = get_chat_config(chat_id, "Welcome_Msg").format(
             escape_markdown(user_name)
@@ -1291,11 +1338,22 @@ def msg_nocmd(update: Update, context: CallbackContext):
             rm_welcome_msg = get_chat_config(chat_id, "Rm_Welcome_Msg")
             if rm_welcome_msg:
                 welcome_msg_time = get_chat_config(chat_id, "Welcome_Time")
-                sent_result = tlg_send_selfdestruct_msg_in(
-                    bot, chat_id, welcome_msg, welcome_msg_time, parse_mode="MARKDOWN"
+                sent_result = await tlg_send_selfdestruct_msg_in(
+                    bot,
+                    chat_id,
+                    welcome_msg,
+                    welcome_msg_time,
+                    parse_mode="MARKDOWN",
+                    message_thread_id=update.effective_message.message_thread_id,
                 )
             else:
-                sent_result = tlg_send_msg(bot, chat_id, welcome_msg, "MARKDOWN")
+                sent_result = await tlg_send_msg(
+                    bot,
+                    chat_id,
+                    welcome_msg,
+                    "MARKDOWN",
+                    message_thread_id=update.effective_message.message_thread_id,
+                )
             if sent_result is None:
                 printts("[{}] Error: Can't send the welcome message.".format(chat_id))
         # Check for send just text message option and apply user restrictions
@@ -1303,7 +1361,7 @@ def msg_nocmd(update: Update, context: CallbackContext):
         # Restrict for 1 day
         if restrict_non_text_msgs == 1:
             tomorrow_epoch = get_unix_epoch() + CONST["T_RESTRICT_NO_TEXT_MSG"]
-            tlg_restrict_user(
+            await tlg_restrict_user(
                 bot,
                 chat_id,
                 user_id,
@@ -1319,7 +1377,7 @@ def msg_nocmd(update: Update, context: CallbackContext):
             )
         # Restrict forever
         elif restrict_non_text_msgs == 2:
-            tlg_restrict_user(
+            await tlg_restrict_user(
                 bot,
                 chat_id,
                 user_id,
@@ -1350,11 +1408,12 @@ def msg_nocmd(update: Update, context: CallbackContext):
                 clueless_user = True
             # Tell the user that is wrong
             if clueless_user:
-                sent_msg_id = tlg_send_selfdestruct_msg_in(
+                sent_msg_id = await tlg_send_selfdestruct_msg_in(
                     bot,
                     chat_id,
                     TEXT[lang]["CAPTCHA_INCORRECT_MATH"],
                     CONST["T_FAST_DEL_MSG"],
+                    message_thread_id=update.effective_message.message_thread_id,
                 )
                 new_users[chat_id][user_id]["msg_to_rm"].append(sent_msg_id)
                 new_users[chat_id][user_id]["msg_to_rm"].append(msg_id)
@@ -1362,21 +1421,23 @@ def msg_nocmd(update: Update, context: CallbackContext):
         else:
             # Check if the message has 4 chars
             if len(msg_text) == 4:
-                sent_msg_id = tlg_send_selfdestruct_msg_in(
+                sent_msg_id = await tlg_send_selfdestruct_msg_in(
                     bot,
                     chat_id,
                     TEXT[lang]["CAPTCHA_INCORRECT_0"],
                     CONST["T_FAST_DEL_MSG"],
+                    message_thread_id=update.effective_message.message_thread_id,
                 )
                 new_users[chat_id][user_id]["msg_to_rm"].append(sent_msg_id)
                 new_users[chat_id][user_id]["msg_to_rm"].append(msg_id)
             # Check if the message was just a 4 numbers msg
             elif is_int(msg_text):
-                sent_msg_id = tlg_send_selfdestruct_msg_in(
+                sent_msg_id = await tlg_send_selfdestruct_msg_in(
                     bot,
                     chat_id,
                     TEXT[lang]["CAPTCHA_INCORRECT_1"],
                     CONST["T_FAST_DEL_MSG"],
+                    message_thread_id=update.effective_message.message_thread_id,
                 )
                 new_users[chat_id][user_id]["msg_to_rm"].append(sent_msg_id)
                 new_users[chat_id][user_id]["msg_to_rm"].append(msg_id)
@@ -1384,7 +1445,7 @@ def msg_nocmd(update: Update, context: CallbackContext):
     printts(" ")
 
 
-def receive_poll_answer(update: Update, context: CallbackContext):
+async def receive_poll_answer(update: Update, context: CallbackContext):
     """User poll vote received"""
     global new_users
     bot = context.bot
@@ -1407,7 +1468,7 @@ def receive_poll_answer(update: Update, context: CallbackContext):
     poll_msg_id = poll_data["poll_msg_id"]
     poll_correct_option = poll_data["correct_option"]
     # The vote come from expected user, let's stop the Poll
-    tlg_stop_poll(bot, chat_id, poll_msg_id)
+    await tlg_stop_poll(bot, chat_id, poll_msg_id)
     # Get user name (if has an alias, just use the alias)
     user_name = from_user.full_name
     if from_user.username is not None:
@@ -1431,7 +1492,13 @@ def receive_poll_answer(update: Update, context: CallbackContext):
         printts("[{}] User {} solved a poll challenge.".format(chat_id, user_name))
         bot_msg = TEXT[lang]["CAPTCHA_SOLVED"].format(user_name)
         if rm_result_msg:
-            tlg_send_selfdestruct_msg_in(bot, chat_id, bot_msg, CONST["T_FAST_DEL_MSG"])
+            await tlg_send_selfdestruct_msg_in(
+                bot,
+                chat_id,
+                bot_msg,
+                CONST["T_FAST_DEL_MSG"],
+                message_thread_id=update.effective_message.message_thread_id,
+            )
         else:
             tlg_send_msg(bot, chat_id, bot_msg)
         del new_users[chat_id][user_id]
@@ -1439,17 +1506,28 @@ def receive_poll_answer(update: Update, context: CallbackContext):
         if welcome_msg != "-":
             if rm_welcome_msg:
                 welcome_msg_time = get_chat_config(chat_id, "Welcome_Time")
-                sent_result = tlg_send_selfdestruct_msg_in(
-                    bot, chat_id, welcome_msg, welcome_msg_time, parse_mode="MARKDOWN"
+                sent_result = await tlg_send_selfdestruct_msg_in(
+                    bot,
+                    chat_id,
+                    welcome_msg,
+                    welcome_msg_time,
+                    parse_mode="MARKDOWN",
+                    message_thread_id=update.effective_message.message_thread_id,
                 )
             else:
-                sent_result = tlg_send_msg(bot, chat_id, welcome_msg, "MARKDOWN")
+                sent_result = await tlg_send_msg(
+                    bot,
+                    chat_id,
+                    welcome_msg,
+                    "MARKDOWN",
+                    message_thread_id=update.effective_message.message_thread_id,
+                )
             if sent_result is None:
                 printts("[{}] Error: Can't send the welcome message.".format(chat_id))
         # Check for send just text message option and apply user restrictions
         if restrict_non_text_msgs == 1:  # Restrict for 1 day
             tomorrow_epoch = get_unix_epoch() + CONST["T_RESTRICT_NO_TEXT_MSG"]
-            tlg_restrict_user(
+            await tlg_restrict_user(
                 bot,
                 chat_id,
                 user_id,
@@ -1464,7 +1542,7 @@ def receive_poll_answer(update: Update, context: CallbackContext):
                 until_date=tomorrow_epoch,
             )
         elif restrict_non_text_msgs == 2:  # Restrict forever
-            tlg_restrict_user(
+            await tlg_restrict_user(
                 bot,
                 chat_id,
                 user_id,
@@ -1483,25 +1561,44 @@ def receive_poll_answer(update: Update, context: CallbackContext):
         bot_msg = TEXT[lang]["CAPTCHA_POLL_FAIL_0"].format(user_name)
         sent_msg_id = None
         if rm_result_msg:
-            sent_result = tlg_send_msg(bot, chat_id, bot_msg)
+            sent_result = await tlg_send_msg(
+                bot,
+                chat_id,
+                bot_msg,
+                message_thread_id=update.effective_message.message_thread_id,
+            )
             if sent_result["msg"] is not None:
                 sent_msg_id = sent_result["msg"].message_id
         else:
-            tlg_send_msg(bot, chat_id, bot_msg)
+            await tlg_send_msg(
+                bot,
+                chat_id,
+                bot_msg,
+                message_thread_id=update.effective_message.message_thread_id,
+            )
         # Wait 10s
         sleep(10)
         # Try to kick the user
-        kick_result = tlg_kick_user(bot, chat_id, user_id)
+        kick_result = await tlg_kick_user(bot, chat_id, user_id)
         if kick_result["error"] == "":
             # Kick success
             msg_text = TEXT[lang]["CAPTCHA_POLL_FAIL_1"].format(user_name)
             # Send kicked message
             if rm_result_msg:
-                tlg_send_selfdestruct_msg_in(
-                    bot, chat_id, msg_text, CONST["T_FAST_DEL_MSG"]
+                await tlg_send_selfdestruct_msg_in(
+                    bot,
+                    chat_id,
+                    msg_text,
+                    CONST["T_FAST_DEL_MSG"],
+                    message_thread_id=update.effective_message.message_thread_id,
                 )
             else:
-                tlg_send_msg(bot, chat_id, msg_text)
+                await tlg_send_msg(
+                    bot,
+                    chat_id,
+                    msg_text,
+                    message_thread_id=update.effective_message.message_thread_id,
+                )
         else:
             # Kick fail
             printts("[{}] Unable to kick".format(chat_id))
@@ -1511,11 +1608,20 @@ def receive_poll_answer(update: Update, context: CallbackContext):
                 # The user is not in the chat
                 msg_text = TEXT[lang]["NEW_USER_KICK_NOT_IN_CHAT"].format(user_name)
                 if rm_result_msg:
-                    tlg_send_selfdestruct_msg_in(
-                        bot, chat_id, msg_text, CONST["T_FAST_DEL_MSG"]
+                    await tlg_send_selfdestruct_msg_in(
+                        bot,
+                        chat_id,
+                        msg_text,
+                        CONST["T_FAST_DEL_MSG"],
+                        message_thread_id=update.effective_message.message_thread_id,
                     )
                 else:
-                    tlg_send_msg(bot, chat_id, msg_text)
+                    await tlg_send_msg(
+                        bot,
+                        chat_id,
+                        msg_text,
+                        message_thread_id=update.effective_message.message_thread_id,
+                    )
             elif (
                 kick_result["error"]
                 == "Not enough rights to restrict/unrestrict chat member"
@@ -1523,16 +1629,30 @@ def receive_poll_answer(update: Update, context: CallbackContext):
                 # Bot has no privileges to kick
                 msg_text = TEXT[lang]["NEW_USER_KICK_NOT_RIGHTS"].format(user_name)
                 # Send no rights for kick message without auto-remove
-                tlg_send_msg(bot, chat_id, msg_text)
+                await tlg_send_msg(
+                    bot,
+                    chat_id,
+                    msg_text,
+                    message_thread_id=update.effective_message.message_thread_id,
+                )
             else:
                 # For other reason, the Bot can't ban
                 msg_text = TEXT[lang]["BOT_CANT_KICK"].format(user_name)
                 if rm_result_msg:
-                    tlg_send_selfdestruct_msg_in(
-                        bot, chat_id, msg_text, CONST["T_FAST_DEL_MSG"]
+                    await tlg_send_selfdestruct_msg_in(
+                        bot,
+                        chat_id,
+                        msg_text,
+                        CONST["T_FAST_DEL_MSG"],
+                        message_thread_id=update.effective_message.message_thread_id,
                     )
                 else:
-                    tlg_send_msg(bot, chat_id, msg_text)
+                    await tlg_send_msg(
+                        bot,
+                        chat_id,
+                        msg_text,
+                        message_thread_id=update.effective_message.message_thread_id,
+                    )
         # Remove user from captcha process
         del new_users[chat_id][user_id]
         # Remove fail message
@@ -1542,12 +1662,12 @@ def receive_poll_answer(update: Update, context: CallbackContext):
     printts(" ")
 
 
-def key_inline_keyboard(update: Update, context: CallbackContext):
+async def key_inline_keyboard(update: Update, context: CallbackContext):
     """Inline Keyboard button pressed handler"""
     bot = context.bot
     query = update.callback_query
     # Confirm query received
-    query_ans_result = tlg_answer_callback_query(bot, query)
+    query_ans_result = await tlg_answer_callback_query(bot, query)
     if query_ans_result["error"] != "":
         return
     # Convert query provided data into list
@@ -1564,7 +1684,7 @@ def key_inline_keyboard(update: Update, context: CallbackContext):
         button_request_pass(bot, query)
 
 
-def button_request_captcha(bot, query):
+async def button_request_captcha(bot, query):
     """Button "Another captcha" pressed handler"""
     global new_users
     # Get query data
@@ -1632,7 +1752,7 @@ def button_request_captcha(bot, query):
     input_media = InputMediaPhoto(
         media=open(captcha["image"], "rb"), caption=img_caption
     )
-    edit_result = tlg_edit_msg_media(
+    edit_result = await tlg_edit_msg_media(
         bot, chat_id, msg_id, media=input_media, reply_markup=reply_markup, timeout=20
     )
     if edit_result["error"] == "":
@@ -1645,7 +1765,7 @@ def button_request_captcha(bot, query):
     printts(" ")
 
 
-def button_request_pass(bot, query):
+async def button_request_pass(bot, query):
     """Button "I'm not a bot" pressed handler"""
     global new_users
     # Get query data
@@ -1674,9 +1794,20 @@ def button_request_pass(bot, query):
     printts("[{}] User {} solved a button-only challenge.".format(chat_id, user_name))
     bot_msg = TEXT[lang]["CAPTCHA_SOLVED"].format(user_name)
     if rm_result_msg:
-        tlg_send_selfdestruct_msg_in(bot, chat_id, bot_msg, CONST["T_FAST_DEL_MSG"])
+        await tlg_send_selfdestruct_msg_in(
+            bot,
+            chat_id,
+            bot_msg,
+            CONST["T_FAST_DEL_MSG"],
+            message_thread_id=query.effective_message.message_thread_id,
+        )
     else:
-        tlg_send_msg(bot, chat_id, bot_msg)
+        await tlg_send_msg(
+            bot,
+            chat_id,
+            bot_msg,
+            message_thread_id=query.effective_message.message_thread_id,
+        )
     del new_users[chat_id][user_id]
     # Check for custom welcome message and send it
     welcome_msg = get_chat_config(chat_id, "Welcome_Msg").format(
@@ -1687,11 +1818,22 @@ def button_request_pass(bot, query):
         rm_welcome_msg = get_chat_config(chat_id, "Rm_Welcome_Msg")
         if rm_welcome_msg:
             welcome_msg_time = get_chat_config(chat_id, "Welcome_Time")
-            sent_result = tlg_send_selfdestruct_msg_in(
-                bot, chat_id, welcome_msg, welcome_msg_time, parse_mode="MARKDOWN"
+            sent_result = await tlg_send_selfdestruct_msg_in(
+                bot,
+                chat_id,
+                welcome_msg,
+                welcome_msg_time,
+                parse_mode="MARKDOWN",
+                message_thread_id=query.effective_message.message_thread_id,
             )
         else:
-            sent_result = tlg_send_msg(bot, chat_id, welcome_msg, "MARKDOWN")
+            sent_result = await tlg_send_msg(
+                bot,
+                chat_id,
+                welcome_msg,
+                "MARKDOWN",
+                message_thread_id=query.effective_message.message_thread_id,
+            )
         if sent_result is None:
             printts("[{}] Error: Can't send the welcome message.".format(chat_id))
     # Check for send just text message option and apply user restrictions
@@ -1699,7 +1841,7 @@ def button_request_pass(bot, query):
     # Restrict for 1 day
     if restrict_non_text_msgs == 1:
         tomorrow_epoch = get_unix_epoch() + CONST["T_RESTRICT_NO_TEXT_MSG"]
-        tlg_restrict_user(
+        await tlg_restrict_user(
             bot,
             chat_id,
             user_id,
@@ -1715,7 +1857,7 @@ def button_request_pass(bot, query):
         )
     # Restrict forever
     elif restrict_non_text_msgs == 2:
-        tlg_restrict_user(
+        await tlg_restrict_user(
             bot,
             chat_id,
             user_id,
@@ -1737,6 +1879,7 @@ def button_request_pass(bot, query):
 
 
 async def cmd_start(update: Update, context: CallbackContext):
+    printts(update.effective_message.message_thread_id)
 
     """Command /start message handler"""
     bot = context.bot
@@ -1752,16 +1895,21 @@ async def cmd_start(update: Update, context: CallbackContext):
     else:
         # Ignore if not requested by a group Admin
         user_id = update_msg.from_user.id
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Send the response message
         lang = get_chat_config(chat_id, "Language")
         tlg_msg_to_selfdestruct(update_msg)
-        tlg_send_selfdestruct_msg(bot, chat_id, TEXT[lang]["START"])
+        await tlg_send_selfdestruct_msg(
+            bot,
+            chat_id,
+            TEXT[lang]["START"],
+            message_thread_id=update.effective_message.message_thread_id,
+        )
 
 
-def cmd_help(update: Update, context: CallbackContext):
+async def cmd_help(update: Update, context: CallbackContext):
     """Command /help message handler"""
     bot = context.bot
     # Ignore command if it was a edited message
@@ -1772,11 +1920,16 @@ def cmd_help(update: Update, context: CallbackContext):
     chat_type = update_msg.chat.type
     lang = get_update_user_lang(update_msg.from_user)
     if chat_type == "private":
-        tlg_send_msg(bot, chat_id, TEXT[lang]["HELP"])
+        await tlg_send_msg(
+            bot,
+            chat_id,
+            TEXT[lang]["HELP"],
+            message_thread_id=update.effective_message.message_thread_id,
+        )
     else:
         # Ignore if not requested by a group Admin
         user_id = update_msg.from_user.id
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Send the response message
@@ -1785,7 +1938,7 @@ def cmd_help(update: Update, context: CallbackContext):
         tlg_send_selfdestruct_msg(bot, chat_id, TEXT[lang]["HELP"])
 
 
-def cmd_commands(update: Update, context: CallbackContext):
+async def cmd_commands(update: Update, context: CallbackContext):
     """Command /commands message handler"""
     bot = context.bot
     # Ignore command if it was a edited message
@@ -1796,20 +1949,25 @@ def cmd_commands(update: Update, context: CallbackContext):
     chat_type = update_msg.chat.type
     lang = get_update_user_lang(update_msg.from_user)
     if chat_type == "private":
-        tlg_send_msg(bot, chat_id, TEXT[lang]["COMMANDS"])
+        await tlg_send_msg(bot, chat_id, TEXT[lang]["COMMANDS"])
     else:
         # Ignore if not requested by a group Admin
         user_id = update_msg.from_user.id
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Send the response message
         lang = get_chat_config(chat_id, "Language")
         tlg_msg_to_selfdestruct(update_msg)
-        tlg_send_selfdestruct_msg(bot, chat_id, TEXT[lang]["COMMANDS"])
+        await tlg_send_selfdestruct_msg(
+            bot,
+            chat_id,
+            TEXT[lang]["COMMANDS"],
+            message_thread_id=update.effective_message.message_thread_id,
+        )
 
 
-def cmd_connect(update: Update, context: CallbackContext):
+async def cmd_connect(update: Update, context: CallbackContext):
     """Command /connect message handler"""
     global connections
     bot = context.bot
@@ -1828,43 +1986,67 @@ def cmd_connect(update: Update, context: CallbackContext):
     # Ignore if command is not in private chat
     if chat_type != "private":
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Send just allowed in private chat message
         lang = get_chat_config(chat_id, "Language")
-        tlg_send_msg_type_chat(
-            bot, chat_type, chat_id, TEXT[lang]["CMD_JUST_IN_PRIVATE"]
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["CMD_JUST_IN_PRIVATE"],
+            message_thread_id=update.effective_message.message_thread_id,
         )
         return
     # Check for group chat ID
     if len(args) == 0:
-        tlg_send_msg_type_chat(bot, chat_type, chat_id, TEXT[lang]["CONNECT_USAGE"])
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["CONNECT_USAGE"],
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     group_id = args[0]
     # Add "-" if not present
     if group_id[0] != "-":
         group_id = "-{}".format(group_id)
     if not tlg_is_valid_group(group_id):
-        tlg_send_msg_type_chat(bot, chat_type, chat_id, TEXT[lang]["INVALID_GROUP_ID"])
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["INVALID_GROUP_ID"],
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     # Check if requested by the Bot owner or an Admin of the group
     if (str(user_id) != CONST["BOT_OWNER"]) and (user_alias != CONST["BOT_OWNER"]):
-        is_admin = tlg_user_is_admin(bot, user_id, group_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, group_id)
         if (is_admin is None) or (is_admin == False):
-            tlg_send_msg_type_chat(
-                bot, chat_type, chat_id, TEXT[lang]["CONNECT_JUST_ADMIN"]
+            await tlg_send_msg_type_chat(
+                bot,
+                chat_type,
+                chat_id,
+                TEXT[lang]["CONNECT_JUST_ADMIN"],
+                message_thread_id=update.effective_message.message_thread_id,
             )
             return
     # Connection
     group_lang = get_chat_config(group_id, "Language")
     connections[user_id] = {"group_id": group_id, "lang": group_lang}
-    tlg_send_msg_type_chat(
-        bot, chat_type, chat_id, TEXT[lang]["CONNECT_OK"].format(group_id)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        TEXT[lang]["CONNECT_OK"].format(group_id),
+        message_thread_id=update.effective_message.message_thread_id,
     )
 
 
-def cmd_disconnect(update: Update, context: CallbackContext):
+async def cmd_disconnect(update: Update, context: CallbackContext):
     """Command /disconnect message handler"""
     global connections
     bot = context.bot
@@ -1879,31 +2061,43 @@ def cmd_disconnect(update: Update, context: CallbackContext):
     # Ignore if command is not in private chat
     if chat_type != "private":
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Send just allowed in private chat message
         lang = get_chat_config(chat_id, "Language")
-        tlg_send_msg_type_chat(
-            bot, chat_type, chat_id, TEXT[lang]["CMD_JUST_IN_PRIVATE"]
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["CMD_JUST_IN_PRIVATE"],
+            message_thread_id=update.effective_message.message_thread_id,
         )
         return
     # Check if User is connected to some group
     if user_id not in connections:
-        tlg_send_msg_type_chat(
-            bot, chat_type, chat_id, TEXT[lang]["DISCONNECT_NOT_CONNECTED"]
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["DISCONNECT_NOT_CONNECTED"],
+            message_thread_id=update.effective_message.message_thread_id,
         )
         return
     # Disconnection
     lang = connections[user_id]["lang"]
     group_id = connections[user_id]["group_id"]
     del connections[user_id]
-    tlg_send_msg_type_chat(
-        bot, chat_type, chat_id, TEXT[lang]["DISCONNECT_OK"].format(group_id)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        TEXT[lang]["DISCONNECT_OK"].format(group_id),
+        message_thread_id=update.effective_message.message_thread_id,
     )
 
 
-def cmd_checkcfg(update: Update, context: CallbackContext):
+async def cmd_checkcfg(update: Update, context: CallbackContext):
     """Command /checkcfg message handler"""
     bot = context.bot
     # Ignore command if it was a edited message
@@ -1916,14 +2110,18 @@ def cmd_checkcfg(update: Update, context: CallbackContext):
     lang = get_update_user_lang(update_msg.from_user)
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
-                bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
+            await tlg_send_msg_type_chat(
+                bot,
+                chat_type,
+                chat_id,
+                TEXT[lang]["CMD_NEEDS_CONNECTION"],
+                message_thread_id=update.effective_message.message_thread_id,
             )
             return
         group_id = connections[user_id]["group_id"]
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Get Group Chat ID and configured language
@@ -1933,16 +2131,17 @@ def cmd_checkcfg(update: Update, context: CallbackContext):
     # Get all group configs
     group_cfg = get_all_chat_config(group_id)
     group_cfg = json_dumps(group_cfg, indent=4, sort_keys=True)
-    tlg_send_msg_type_chat(
+    await tlg_send_msg_type_chat(
         bot,
         chat_type,
         chat_id,
         TEXT[lang]["CHECK_CFG"].format(escape_markdown(group_cfg)),
         parse_mode="MARKDOWN",
+        message_thread_id=update.effective_message.message_thread_id,
     )
 
 
-def cmd_language(update: Update, context: CallbackContext):
+async def cmd_language(update: Update, context: CallbackContext):
     """Command /language message handler"""
     bot = context.bot
     args = context.args
@@ -1957,14 +2156,17 @@ def cmd_language(update: Update, context: CallbackContext):
     # Check usage in private chat
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
-                bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
+            await tlg_send_msg_type_chat(
+                bot,
+                chat_type,
+                chat_id,
+                TEXT[lang]["CMD_NEEDS_CONNECTION"],
             )
             return
         group_id = connections[user_id]["group_id"]
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Get Group Chat ID and configured language
@@ -1975,7 +2177,13 @@ def cmd_language(update: Update, context: CallbackContext):
     # Check if no argument was provided with the command
     if len(args) == 0:
         msg_text = TEXT[lang]["LANG_NOT_ARG"].format(CONST["SUPPORTED_LANGS_CMDS"])
-        tlg_send_msg_type_chat(bot, chat_type, chat_id, msg_text)
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            msg_text,
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     # Get and configure chat to provided language
     lang_provided = args[0].upper()
@@ -1990,10 +2198,16 @@ def cmd_language(update: Update, context: CallbackContext):
             msg_text = TEXT[lang]["LANG_SAME"].format(CONST["SUPPORTED_LANGS_CMDS"])
     else:
         msg_text = TEXT[lang]["LANG_BAD_LANG"].format(CONST["SUPPORTED_LANGS_CMDS"])
-    tlg_send_msg_type_chat(bot, chat_type, chat_id, msg_text)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        msg_text,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_time(update: Update, context: CallbackContext):
+async def cmd_time(update: Update, context: CallbackContext):
     """Command /time message handler"""
     bot = context.bot
     args = context.args
@@ -2008,14 +2222,14 @@ def cmd_time(update: Update, context: CallbackContext):
     # Check and deny usage in private chat
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
+            await tlg_send_msg_type_chat(
                 bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
             )
             return
         group_id = connections[user_id]["group_id"]
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Get Group Chat ID and configured language
@@ -2025,11 +2239,23 @@ def cmd_time(update: Update, context: CallbackContext):
         tlg_msg_to_selfdestruct(update_msg)
     # Check if no argument was provided with the command
     if len(args) == 0:
-        tlg_send_msg_type_chat(bot, chat_type, chat_id, TEXT[lang]["TIME_NOT_ARG"])
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["TIME_NOT_ARG"],
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     # Check if provided time argument is not a number
     if not is_int(args[0]):
-        tlg_send_msg_type_chat(bot, chat_type, chat_id, TEXT[lang]["TIME_NOT_NUM"])
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["TIME_NOT_NUM"],
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     # Get time arguments
     new_time = int(args[0])
@@ -2046,24 +2272,48 @@ def cmd_time(update: Update, context: CallbackContext):
         min_sec = "sec"
         new_time_str = "{} sec".format(new_time)
     else:
-        tlg_send_msg_type_chat(bot, chat_type, chat_id, TEXT[lang]["TIME_NOT_ARG"])
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["TIME_NOT_ARG"],
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     # Check if time value is out of limits
     if new_time < 10:  # Lees than 10s
         msg_text = TEXT[lang]["TIME_OUT_RANGE"].format(CONST["MAX_CONFIG_CAPTCHA_TIME"])
-        tlg_send_msg_type_chat(bot, chat_type, chat_id, msg_text)
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            msg_text,
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     if new_time > CONST["MAX_CONFIG_CAPTCHA_TIME"] * CONST["T_SECONDS_IN_MIN"]:
         msg_text = TEXT[lang]["TIME_OUT_RANGE"].format(CONST["MAX_CONFIG_CAPTCHA_TIME"])
-        tlg_send_msg_type_chat(bot, chat_type, chat_id, msg_text)
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            msg_text,
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     # Set the new captcha time
     save_config_property(group_id, "Captcha_Time", new_time)
     msg_text = TEXT[lang]["TIME_CHANGE"].format(new_time_str)
-    tlg_send_msg_type_chat(bot, chat_type, chat_id, msg_text)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        msg_text,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_difficulty(update: Update, context: CallbackContext):
+async def cmd_difficulty(update: Update, context: CallbackContext):
     """Command /difficulty message handler"""
     bot = context.bot
     args = context.args
@@ -2078,14 +2328,14 @@ def cmd_difficulty(update: Update, context: CallbackContext):
     # Check and deny usage in private chat
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
+            await tlg_send_msg_type_chat(
                 bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
             )
             return
         group_id = connections[user_id]["group_id"]
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Get Group Chat ID and configured language
@@ -2095,8 +2345,12 @@ def cmd_difficulty(update: Update, context: CallbackContext):
         tlg_msg_to_selfdestruct(update_msg)
     # Check if no argument was provided with the command
     if len(args) == 0:
-        tlg_send_msg_type_chat(
-            bot, chat_type, chat_id, TEXT[lang]["DIFFICULTY_NOT_ARG"]
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["DIFFICULTY_NOT_ARG"],
+            message_thread_id=update.effective_message.message_thread_id,
         )
         return
     # Get and configure chat to provided captcha difficulty
@@ -2110,10 +2364,16 @@ def cmd_difficulty(update: Update, context: CallbackContext):
         bot_msg = TEXT[lang]["DIFFICULTY_CHANGE"].format(new_difficulty)
     else:
         bot_msg = TEXT[lang]["DIFFICULTY_NOT_NUM"]
-    tlg_send_msg_type_chat(bot, chat_type, chat_id, bot_msg)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        bot_msg,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_captcha_mode(update: Update, context: CallbackContext):
+async def cmd_captcha_mode(update: Update, context: CallbackContext):
     """Command /captcha_mode message handler"""
     bot = context.bot
     args = context.args
@@ -2128,14 +2388,14 @@ def cmd_captcha_mode(update: Update, context: CallbackContext):
     # Check and deny usage in private chat
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
+            await tlg_send_msg_type_chat(
                 bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
             )
             return
         group_id = connections[user_id]["group_id"]
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Get Group Chat ID and configured language
@@ -2145,8 +2405,12 @@ def cmd_captcha_mode(update: Update, context: CallbackContext):
         tlg_msg_to_selfdestruct(update_msg)
     # Check if no argument was provided with the command
     if len(args) == 0:
-        tlg_send_msg_type_chat(
-            bot, chat_type, chat_id, TEXT[lang]["CAPTCHA_MODE_NOT_ARG"]
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["CAPTCHA_MODE_NOT_ARG"],
+            message_thread_id=update.effective_message.message_thread_id,
         )
         return
     # Get and configure chat to provided captcha mode
@@ -2156,10 +2420,16 @@ def cmd_captcha_mode(update: Update, context: CallbackContext):
         bot_msg = TEXT[lang]["CAPTCHA_MODE_CHANGE"].format(new_captcha_mode)
     else:
         bot_msg = TEXT[lang]["CAPTCHA_MODE_INVALID"]
-    tlg_send_msg_type_chat(bot, chat_type, chat_id, bot_msg)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        bot_msg,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_welcome_msg(update: Update, context: CallbackContext):
+async def cmd_welcome_msg(update: Update, context: CallbackContext):
     """Command /welcome_msg message handler"""
     bot = context.bot
     args = context.args
@@ -2174,14 +2444,14 @@ def cmd_welcome_msg(update: Update, context: CallbackContext):
     # Check and deny usage in private chat
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
+            await tlg_send_msg_type_chat(
                 bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
             )
             return
         group_id = connections[user_id]["group_id"]
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Get Group Chat ID and configured language
@@ -2191,8 +2461,12 @@ def cmd_welcome_msg(update: Update, context: CallbackContext):
         tlg_msg_to_selfdestruct(update_msg)
     # Check if no argument was provided with the command
     if len(args) == 0:
-        tlg_send_msg_type_chat(
-            bot, chat_type, chat_id, TEXT[lang]["WELCOME_MSG_SET_NOT_ARG"]
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["WELCOME_MSG_SET_NOT_ARG"],
+            message_thread_id=update.effective_message.message_thread_id,
         )
         return
     # Get welcome message in markdown and remove "/Welcome_msg " text from it
@@ -2207,10 +2481,16 @@ def cmd_welcome_msg(update: Update, context: CallbackContext):
     else:
         bot_msg = TEXT[lang]["WELCOME_MSG_SET"]
     save_config_property(group_id, "Welcome_Msg", welcome_msg)
-    tlg_send_msg_type_chat(bot, chat_type, chat_id, bot_msg)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        bot_msg,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_welcome_msg_time(update: Update, context: CallbackContext):
+async def cmd_welcome_msg_time(update: Update, context: CallbackContext):
     """Command /welcome_msg_time message handler"""
     bot = context.bot
     args = context.args
@@ -2225,14 +2505,14 @@ def cmd_welcome_msg_time(update: Update, context: CallbackContext):
     # Check and deny usage in private chat
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
+            await tlg_send_msg_type_chat(
                 bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
             )
             return
         group_id = connections[user_id]["group_id"]
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Get Group Chat ID and configured language
@@ -2242,13 +2522,23 @@ def cmd_welcome_msg_time(update: Update, context: CallbackContext):
         tlg_msg_to_selfdestruct(update_msg)
     # Check if no argument was provided with the command
     if len(args) == 0:
-        tlg_send_msg_type_chat(
-            bot, chat_type, chat_id, TEXT[lang]["WELCOME_TIME_NOT_ARG"]
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["WELCOME_TIME_NOT_ARG"],
+            message_thread_id=update.effective_message.message_thread_id,
         )
         return
     # Check if provided time argument is not a number
     if not is_int(args[0]):
-        tlg_send_msg_type_chat(bot, chat_type, chat_id, TEXT[lang]["TIME_NOT_NUM"])
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["TIME_NOT_NUM"],
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     # Get time arguments
     new_time = int(args[0])
@@ -2265,26 +2555,48 @@ def cmd_welcome_msg_time(update: Update, context: CallbackContext):
         min_sec = "sec"
         new_time_str = "{} sec".format(new_time)
     else:
-        tlg_send_msg_type_chat(
-            bot, chat_type, chat_id, TEXT[lang]["WELCOME_TIME_NOT_ARG"]
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["WELCOME_TIME_NOT_ARG"],
+            message_thread_id=update.effective_message.message_thread_id,
         )
         return
     # Check if time value is out of limits
     if new_time < 10:  # Lees than 10s
         msg_text = TEXT[lang]["TIME_OUT_RANGE"].format(CONST["MAX_CONFIG_CAPTCHA_TIME"])
-        tlg_send_msg_type_chat(bot, chat_type, chat_id, msg_text)
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            msg_text,
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     if new_time > CONST["MAX_CONFIG_CAPTCHA_TIME"] * CONST["T_SECONDS_IN_MIN"]:
         msg_text = TEXT[lang]["TIME_OUT_RANGE"].format(CONST["MAX_CONFIG_CAPTCHA_TIME"])
-        tlg_send_msg_type_chat(bot, chat_type, chat_id, msg_text)
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            msg_text,
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     # Set the new captcha time
     save_config_property(group_id, "Welcome_Time", new_time)
     msg_text = TEXT[lang]["WELCOME_TIME_CHANGE"].format(new_time_str)
-    tlg_send_msg_type_chat(bot, chat_type, chat_id, msg_text)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        msg_text,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_captcha_poll(update: Update, context: CallbackContext):
+async def cmd_captcha_poll(update: Update, context: CallbackContext):
     """Command /captcha_poll message handler"""
     bot = context.bot
     args = context.args
@@ -2299,14 +2611,14 @@ def cmd_captcha_poll(update: Update, context: CallbackContext):
     # Check and deny usage in private chat
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
+            await tlg_send_msg_type_chat(
                 bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
             )
             return
         group_id = connections[user_id]["group_id"]
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Get Group Chat ID and configured language
@@ -2322,13 +2634,25 @@ def cmd_captcha_poll(update: Update, context: CallbackContext):
     )
     # Check if no argument was provided with the command
     if len(args) < 2:
-        tlg_send_msg_type_chat(bot, chat_type, chat_id, text_cmd_usage)
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            text_cmd_usage,
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     # Get poll message command
     poll_cmd = args[0]
     print("poll_cmd: {}".format(poll_cmd))
     if poll_cmd not in ["question", "option", "correct_option"]:
-        tlg_send_msg_type_chat(bot, chat_type, chat_id, text_cmd_usage)
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            text_cmd_usage,
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     if poll_cmd == "question":
         # get Poll Question
@@ -2338,50 +2662,86 @@ def cmd_captcha_poll(update: Update, context: CallbackContext):
             poll_question = poll_question[: CONST["MAX_POLL_QUESTION_LENGTH"]]
         # Save Poll Question
         save_config_property(group_id, "Poll_Q", poll_question)
-        tlg_send_msg_type_chat(
-            bot, chat_type, chat_id, TEXT[lang]["POLL_QUESTION_CONFIGURED"]
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["POLL_QUESTION_CONFIGURED"],
+            message_thread_id=update.effective_message.message_thread_id,
         )
     elif poll_cmd == "correct_option":
         # get Poll correct option and check if is a number
         option_num = args[1]
         if not is_int(option_num):
-            tlg_send_msg_type_chat(bot, chat_type, chat_id, text_cmd_usage)
+            await tlg_send_msg_type_chat(
+                bot,
+                chat_type,
+                chat_id,
+                text_cmd_usage,
+                message_thread_id=update.effective_message.message_thread_id,
+            )
             return
         option_num = int(option_num)
         # Check if correct option number is configured
         if (option_num < 1) or (option_num > CONST["MAX_POLL_OPTIONS"]):
-            tlg_send_msg_type_chat(bot, chat_type, chat_id, text_cmd_usage)
+            await tlg_send_msg_type_chat(
+                bot,
+                chat_type,
+                chat_id,
+                text_cmd_usage,
+                message_thread_id=update.effective_message.message_thread_id,
+            )
             return
         poll_options = get_chat_config(group_id, "Poll_A")
         if option_num > num_config_poll_options(poll_options):
-            tlg_send_msg_type_chat(
+            await tlg_send_msg_type_chat(
                 bot,
                 chat_type,
                 chat_id,
                 TEXT[lang]["POLL_CORRECT_OPTION_NOT_CONFIGURED"].format(option_num),
+                message_thread_id=update.effective_message.message_thread_id,
             )
             return
         # Save Poll correct option number
         save_config_property(group_id, "Poll_C_A", option_num)
-        tlg_send_msg_type_chat(
+        await tlg_send_msg_type_chat(
             bot,
             chat_type,
             chat_id,
             TEXT[lang]["POLL_CORRECT_OPTION_CONFIGURED"].format(option_num),
+            message_thread_id=update.effective_message.message_thread_id,
         )
     elif poll_cmd == "option":
         # Check if option argument is valid
         if len(args) < 3:
-            tlg_send_msg_type_chat(bot, chat_type, chat_id, text_cmd_usage)
+            await tlg_send_msg_type_chat(
+                bot,
+                chat_type,
+                chat_id,
+                text_cmd_usage,
+                message_thread_id=update.effective_message.message_thread_id,
+            )
             return
         option_num = args[1]
         print("option_num: {}".format(option_num))
         if not is_int(option_num):
-            tlg_send_msg_type_chat(bot, chat_type, chat_id, text_cmd_usage)
+            await tlg_send_msg_type_chat(
+                bot,
+                chat_type,
+                chat_id,
+                text_cmd_usage,
+                message_thread_id=update.effective_message.message_thread_id,
+            )
             return
         option_num = int(option_num)
         if (option_num < 1) or (option_num > CONST["MAX_POLL_OPTIONS"]):
-            tlg_send_msg_type_chat(bot, chat_type, chat_id, text_cmd_usage)
+            await tlg_send_msg_type_chat(
+                bot,
+                chat_type,
+                chat_id,
+                text_cmd_usage,
+                message_thread_id=update.effective_message.message_thread_id,
+            )
             return
         option_num = option_num - 1
         # Resize poll options list if missing options slots
@@ -2408,15 +2768,16 @@ def cmd_captcha_poll(update: Update, context: CallbackContext):
             poll_options[option_num] = poll_option
         # Save Poll option
         save_config_property(group_id, "Poll_A", poll_options)
-        tlg_send_msg_type_chat(
+        await tlg_send_msg_type_chat(
             bot,
             chat_type,
             chat_id,
             TEXT[lang]["POLL_OPTION_CONFIGURED"].format(option_num + 1),
+            message_thread_id=update.effective_message.message_thread_id,
         )
 
 
-def cmd_restrict_non_text(update: Update, context: CallbackContext):
+async def cmd_restrict_non_text(update: Update, context: CallbackContext):
     """Command /restrict_non_text message handler"""
     bot = context.bot
     args = context.args
@@ -2431,14 +2792,14 @@ def cmd_restrict_non_text(update: Update, context: CallbackContext):
     # Check and deny usage in private chat
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
+            await tlg_send_msg_type_chat(
                 bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
             )
             return
         group_id = connections[user_id]["group_id"]
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Get Group Chat ID and configured language
@@ -2448,15 +2809,23 @@ def cmd_restrict_non_text(update: Update, context: CallbackContext):
         tlg_msg_to_selfdestruct(update_msg)
     # Check if no argument was provided with the command
     if len(args) == 0:
-        tlg_send_msg_type_chat(
-            bot, chat_type, chat_id, TEXT[lang]["RESTRICT_NON_TEXT_MSG_NOT_ARG"]
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["RESTRICT_NON_TEXT_MSG_NOT_ARG"],
+            message_thread_id=update.effective_message.message_thread_id,
         )
         return
     # Check for valid expected argument values
     restrict_non_text_msgs = args[0]
     if restrict_non_text_msgs != "enable" and restrict_non_text_msgs != "disable":
-        tlg_send_msg_type_chat(
-            bot, chat_type, chat_id, TEXT[lang]["RESTRICT_NON_TEXT_MSG_NOT_ARG"]
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["RESTRICT_NON_TEXT_MSG_NOT_ARG"],
+            message_thread_id=update.effective_message.message_thread_id,
         )
         return
     # Check for forever restriction argument
@@ -2473,10 +2842,16 @@ def cmd_restrict_non_text(update: Update, context: CallbackContext):
     else:
         save_config_property(group_id, "Restrict_Non_Text", 0)
         bot_msg = TEXT[lang]["RESTRICT_NON_TEXT_MSG_DISABLED"]
-    tlg_send_msg_type_chat(bot, chat_type, chat_id, bot_msg)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        bot_msg,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_add_ignore(update: Update, context: CallbackContext):
+async def cmd_add_ignore(update: Update, context: CallbackContext):
     """Command /add_ignore message handler"""
     bot = context.bot
     args = context.args
@@ -2491,14 +2866,14 @@ def cmd_add_ignore(update: Update, context: CallbackContext):
     # Check and deny usage in private chat
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
+            await tlg_send_msg_type_chat(
                 bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
             )
             return
         group_id = connections[user_id]["group_id"]
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Get Group Chat ID and configured language
@@ -2508,8 +2883,12 @@ def cmd_add_ignore(update: Update, context: CallbackContext):
         tlg_msg_to_selfdestruct(update_msg)
     # Check if no argument was provided with the command
     if len(args) == 0:
-        tlg_send_msg_type_chat(
-            bot, chat_type, chat_id, TEXT[lang]["IGNORE_LIST_ADD_NOT_ARG"]
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["IGNORE_LIST_ADD_NOT_ARG"],
+            message_thread_id=update.effective_message.message_thread_id,
         )
         return
     # Check and add user ID/alias form ignore list
@@ -2528,10 +2907,16 @@ def cmd_add_ignore(update: Update, context: CallbackContext):
             bot_msg = TEXT[lang]["IGNORE_LIST_ADD_LIMIT_EXCEEDED"]
     else:
         bot_msg = TEXT[lang]["IGNORE_LIST_ADD_INVALID"]
-    tlg_send_msg_type_chat(bot, chat_type, chat_id, bot_msg)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        bot_msg,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_remove_ignore(update: Update, context: CallbackContext):
+async def cmd_remove_ignore(update: Update, context: CallbackContext):
     """Command /remove_ignore message handler"""
     bot = context.bot
     args = context.args
@@ -2546,14 +2931,14 @@ def cmd_remove_ignore(update: Update, context: CallbackContext):
     # Check and deny usage in private chat
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
+            await tlg_send_msg_type_chat(
                 bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
             )
             return
         group_id = connections[user_id]["group_id"]
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Get Group Chat ID and configured language
@@ -2563,8 +2948,12 @@ def cmd_remove_ignore(update: Update, context: CallbackContext):
         tlg_msg_to_selfdestruct(update_msg)
     # Check if no argument was provided with the command
     if len(args) == 0:
-        tlg_send_msg_type_chat(
-            bot, chat_type, chat_id, TEXT[lang]["IGNORE_LIST_REMOVE_NOT_ARG"]
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["IGNORE_LIST_REMOVE_NOT_ARG"],
+            message_thread_id=update.effective_message.message_thread_id,
         )
         return
     # Check and remove user ID/alias form ignore list
@@ -2575,10 +2964,16 @@ def cmd_remove_ignore(update: Update, context: CallbackContext):
         bot_msg = TEXT[lang]["IGNORE_LIST_REMOVE_SUCCESS"]
     else:
         bot_msg = TEXT[lang]["IGNORE_LIST_REMOVE_NOT_IN_LIST"]
-    tlg_send_msg_type_chat(bot, chat_type, chat_id, bot_msg)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        bot_msg,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_ignore_list(update: Update, context: CallbackContext):
+async def cmd_ignore_list(update: Update, context: CallbackContext):
     """Command /ignore_list message handler"""
     bot = context.bot
     # Ignore command if it was a edited message
@@ -2592,14 +2987,14 @@ def cmd_ignore_list(update: Update, context: CallbackContext):
     # Check and deny usage in private chat
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
+            await tlg_send_msg_type_chat(
                 bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
             )
             return
         group_id = connections[user_id]["group_id"]
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Get Group Chat ID and configured language
@@ -2613,10 +3008,16 @@ def cmd_ignore_list(update: Update, context: CallbackContext):
         bot_msg = TEXT[lang]["IGNORE_LIST_EMPTY"]
     else:
         bot_msg = "\n".join([str(x) for x in ignore_list])
-    tlg_send_msg_type_chat(bot, chat_type, chat_id, bot_msg)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        bot_msg,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_remove_solve_kick_msg(update: Update, context: CallbackContext):
+async def cmd_remove_solve_kick_msg(update: Update, context: CallbackContext):
     """Command /remove_solve_kick_msg message handler"""
     bot = context.bot
     args = context.args
@@ -2631,14 +3032,14 @@ def cmd_remove_solve_kick_msg(update: Update, context: CallbackContext):
     # Check and deny usage in private chat
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
+            await tlg_send_msg_type_chat(
                 bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
             )
             return
         group_id = connections[user_id]["group_id"]
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Get Group Chat ID and configured language
@@ -2648,7 +3049,13 @@ def cmd_remove_solve_kick_msg(update: Update, context: CallbackContext):
         tlg_msg_to_selfdestruct(update_msg)
     # Check if no argument was provided with the command
     if len(args) == 0:
-        tlg_send_msg_type_chat(bot, chat_type, chat_id, TEXT[lang]["RM_SOLVE_KICK_MSG"])
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["RM_SOLVE_KICK_MSG"],
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     # Get remove solve/kick messages config to set
     yes_or_no = args[0].lower()
@@ -2660,10 +3067,16 @@ def cmd_remove_solve_kick_msg(update: Update, context: CallbackContext):
         bot_msg = TEXT[lang]["RM_SOLVE_KICK_MSG_NO"]
     else:
         bot_msg = TEXT[lang]["RM_SOLVE_KICK_MSG"]
-    tlg_send_msg_type_chat(bot, chat_type, chat_id, bot_msg)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        bot_msg,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_remove_welcome_msg(update: Update, context: CallbackContext):
+async def cmd_remove_welcome_msg(update: Update, context: CallbackContext):
     """Command /remove_welcome_msg message handler"""
     bot = context.bot
     args = context.args
@@ -2678,7 +3091,7 @@ def cmd_remove_welcome_msg(update: Update, context: CallbackContext):
     # Check and deny usage in private chat
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
+            await tlg_send_msg_type_chat(
                 bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
             )
             return
@@ -2695,7 +3108,13 @@ def cmd_remove_welcome_msg(update: Update, context: CallbackContext):
         tlg_msg_to_selfdestruct(update_msg)
     # Check if no argument was provided with the command
     if len(args) == 0:
-        tlg_send_msg_type_chat(bot, chat_type, chat_id, TEXT[lang]["RM_WELCOME_MSG"])
+        await tlg_send_msg_type_chat(
+            bot,
+            chat_type,
+            chat_id,
+            TEXT[lang]["RM_WELCOME_MSG"],
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     # Get remove welcome messages config to set
     yes_or_no = args[0].lower()
@@ -2707,10 +3126,16 @@ def cmd_remove_welcome_msg(update: Update, context: CallbackContext):
         bot_msg = TEXT[lang]["RM_WELCOME_MSG_NO"]
     else:
         bot_msg = TEXT[lang]["RM_WELCOME_MSG"]
-    tlg_send_msg_type_chat(bot, chat_type, chat_id, bot_msg)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        bot_msg,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_remove_all_msg_kick_on(update: Update, context: CallbackContext):
+async def cmd_remove_all_msg_kick_on(update: Update, context: CallbackContext):
     """Command /remove_all_msg_kick_on message handler"""
     bot = context.bot
     # Ignore command if it was a edited message
@@ -2724,14 +3149,17 @@ def cmd_remove_all_msg_kick_on(update: Update, context: CallbackContext):
     # Check and deny usage in private chat
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
-                bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
+            await tlg_send_msg_type_chat(
+                bot,
+                chat_type,
+                chat_id,
+                TEXT[lang]["CMD_NEEDS_CONNECTION"],
             )
             return
         group_id = connections[user_id]["group_id"]
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Get Group Chat ID and configured language
@@ -2747,10 +3175,16 @@ def cmd_remove_all_msg_kick_on(update: Update, context: CallbackContext):
         enable = True
         save_config_property(group_id, "RM_All_Msg", enable)
         bot_msg = TEXT[lang]["RM_ALL_MSGS_AFTER_KICK_ON"]
-    tlg_send_msg_type_chat(bot, chat_type, chat_id, bot_msg)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        bot_msg,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_remove_all_msg_kick_off(update: Update, context: CallbackContext):
+async def cmd_remove_all_msg_kick_off(update: Update, context: CallbackContext):
     """Command /remove_all_msg_kick_off message handler"""
     bot = context.bot
     # Ignore command if it was a edited message
@@ -2764,14 +3198,14 @@ def cmd_remove_all_msg_kick_off(update: Update, context: CallbackContext):
     # Check and deny usage in private chat
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
+            await tlg_send_msg_type_chat(
                 bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
             )
             return
         group_id = connections[user_id]["group_id"]
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Get Group Chat ID and configured language
@@ -2787,10 +3221,16 @@ def cmd_remove_all_msg_kick_off(update: Update, context: CallbackContext):
         enable = False
         save_config_property(group_id, "RM_All_Msg", enable)
         bot_msg = TEXT[lang]["RM_ALL_MSGS_AFTER_KICK_OFF"]
-    tlg_send_msg_type_chat(bot, chat_type, chat_id, bot_msg)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        bot_msg,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_url_enable(update: Update, context: CallbackContext):
+async def cmd_url_enable(update: Update, context: CallbackContext):
     """Command /url_enable message handler"""
     bot = context.bot
     # Ignore command if it was a edited message
@@ -2804,14 +3244,14 @@ def cmd_url_enable(update: Update, context: CallbackContext):
     # Check and deny usage in private chat
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
+            await tlg_send_msg_type_chat(
                 bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
             )
             return
         group_id = connections[user_id]["group_id"]
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Get Group Chat ID and configured language
@@ -2827,10 +3267,16 @@ def cmd_url_enable(update: Update, context: CallbackContext):
         enable = True
         save_config_property(group_id, "URL_Enabled", enable)
         bot_msg = TEXT[lang]["URL_ENABLE"]
-    tlg_send_msg_type_chat(bot, chat_type, chat_id, bot_msg)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        bot_msg,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_url_disable(update: Update, context: CallbackContext):
+async def cmd_url_disable(update: Update, context: CallbackContext):
     """Command /url_disable message handler"""
     bot = context.bot
     # Ignore command if it was a edited message
@@ -2844,14 +3290,14 @@ def cmd_url_disable(update: Update, context: CallbackContext):
     # Check and deny usage in private chat
     if chat_type == "private":
         if user_id not in connections:
-            tlg_send_msg_type_chat(
+            await tlg_send_msg_type_chat(
                 bot, chat_type, chat_id, TEXT[lang]["CMD_NEEDS_CONNECTION"]
             )
             return
         group_id = connections[user_id]["group_id"]
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Get Group Chat ID and configured language
@@ -2867,10 +3313,16 @@ def cmd_url_disable(update: Update, context: CallbackContext):
         enable = False
         save_config_property(group_id, "URL_Enabled", enable)
         bot_msg = TEXT[lang]["URL_DISABLE"]
-    tlg_send_msg_type_chat(bot, chat_type, chat_id, bot_msg)
+    await tlg_send_msg_type_chat(
+        bot,
+        chat_type,
+        chat_id,
+        bot_msg,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_enable(update: Update, context: CallbackContext):
+async def cmd_enable(update: Update, context: CallbackContext):
     """Command /enable message handler"""
     bot = context.bot
     # Ignore command if it was a edited message
@@ -2883,10 +3335,10 @@ def cmd_enable(update: Update, context: CallbackContext):
     lang = get_update_user_lang(update_msg.from_user)
     # Check and deny usage in private chat
     if chat_type == "private":
-        tlg_send_msg(bot, chat_id, TEXT[lang]["CMD_NOT_ALLOW_PRIVATE"])
+        await tlg_send_msg(bot, chat_id, TEXT[lang]["CMD_NOT_ALLOW_PRIVATE"])
         return
     # Ignore if not requested by a group Admin
-    is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+    is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
     if (is_admin is None) or (is_admin == False):
         return
     # Set user command message to be deleted by Bot in default time
@@ -2901,10 +3353,15 @@ def cmd_enable(update: Update, context: CallbackContext):
         enable = True
         save_config_property(chat_id, "Enabled", enable)
         bot_msg = TEXT[lang]["ENABLE"]
-    tlg_send_selfdestruct_msg(bot, chat_id, bot_msg)
+    await tlg_send_selfdestruct_msg(
+        bot,
+        chat_id,
+        bot_msg,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_disable(update: Update, context: CallbackContext):
+async def cmd_disable(update: Update, context: CallbackContext):
     """Command /disable message handler"""
     bot = context.bot
     # Ignore command if it was a edited message
@@ -2917,10 +3374,10 @@ def cmd_disable(update: Update, context: CallbackContext):
     lang = get_update_user_lang(update_msg.from_user)
     # Check and deny usage in private chat
     if chat_type == "private":
-        tlg_send_msg(bot, chat_id, TEXT[lang]["CMD_NOT_ALLOW_PRIVATE"])
+        await tlg_send_msg(bot, chat_id, TEXT[lang]["CMD_NOT_ALLOW_PRIVATE"])
         return
     # Ignore if not requested by a group Admin
-    is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+    is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
     if (is_admin is None) or (is_admin == False):
         return
     # Set user command message to be deleted by Bot in default time
@@ -2935,10 +3392,15 @@ def cmd_disable(update: Update, context: CallbackContext):
         enable = False
         save_config_property(chat_id, "Enabled", enable)
         bot_msg = TEXT[lang]["DISABLE"]
-    tlg_send_selfdestruct_msg(bot, chat_id, bot_msg)
+    await tlg_send_selfdestruct_msg(
+        bot,
+        chat_id,
+        bot_msg,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_chatid(update: Update, context: CallbackContext):
+async def cmd_chatid(update: Update, context: CallbackContext):
     """Command /chatid message handler"""
     bot = context.bot
     # Ignore command if it was a edited message
@@ -2949,14 +3411,19 @@ def cmd_chatid(update: Update, context: CallbackContext):
     chat_type = update_msg.chat.type
     if chat_type == "private":
         msg_text = "Your Chat ID:\n—————————\n{}".format(chat_id)
-        tlg_send_msg(bot, chat_id, msg_text)
+        await tlg_send_msg(bot, chat_id, msg_text)
     else:
         msg_text = "Group Chat ID:\n—————————\n{}".format(chat_id)
         tlg_msg_to_selfdestruct(update_msg)
-        tlg_send_selfdestruct_msg(bot, chat_id, msg_text)
+        await tlg_send_selfdestruct_msg(
+            bot,
+            chat_id,
+            msg_text,
+            message_thread_id=update.effective_message.message_thread_id,
+        )
 
 
-def cmd_version(update: Update, context: CallbackContext):
+async def cmd_version(update: Update, context: CallbackContext):
     """Command /version message handler"""
     bot = context.bot
     # Ignore command if it was a edited message
@@ -2969,20 +3436,25 @@ def cmd_version(update: Update, context: CallbackContext):
     lang = get_update_user_lang(update_msg.from_user)
     if chat_type == "private":
         msg_text = TEXT[lang]["VERSION"].format(CONST["VERSION"])
-        tlg_send_msg(bot, chat_id, msg_text)
+        await tlg_send_msg(bot, chat_id, msg_text)
     else:
         # Ignore if not requested by a group Admin
-        is_admin = tlg_user_is_admin(bot, user_id, chat_id)
+        is_admin = await tlg_user_is_admin(bot, user_id, chat_id)
         if (is_admin is None) or (is_admin == False):
             return
         # Send the message
         lang = get_chat_config(chat_id, "Language")
         msg_text = TEXT[lang]["VERSION"].format(CONST["VERSION"])
         tlg_msg_to_selfdestruct(update_msg)
-        tlg_send_selfdestruct_msg(bot, chat_id, msg_text)
+        await tlg_send_selfdestruct_msg(
+            bot,
+            chat_id,
+            msg_text,
+            message_thread_id=update.effective_message.message_thread_id,
+        )
 
 
-def cmd_about(update: Update, context: CallbackContext):
+async def cmd_about(update: Update, context: CallbackContext):
     """Command /about handler"""
     bot = context.bot
     # Ignore command if it was a edited message
@@ -3000,10 +3472,15 @@ def cmd_about(update: Update, context: CallbackContext):
         CONST["REPOSITORY"],
         CONST["DEV_DONATION_ADDR"],
     )
-    tlg_send_msg(bot, chat_id, msg_text)
+    await tlg_send_msg(
+        bot,
+        chat_id,
+        msg_text,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
 
 
-def cmd_captcha(update: Update, context: CallbackContext):
+async def cmd_captcha(update: Update, context: CallbackContext):
     """Command /captcha message handler. Usefull to test.
     Just Bot Owner can use it."""
     bot = context.bot
@@ -3020,7 +3497,12 @@ def cmd_captcha(update: Update, context: CallbackContext):
     lang = get_update_user_lang(update_msg.from_user)
     # Check if command was execute by Bot owner
     if (str(user_id) != CONST["BOT_OWNER"]) and (user_alias != CONST["BOT_OWNER"]):
-        tlg_send_selfdestruct_msg(bot, chat_id, CONST["CMD_JUST_ALLOW_OWNER"])
+        await tlg_send_selfdestruct_msg(
+            bot,
+            chat_id,
+            CONST["CMD_JUST_ALLOW_OWNER"],
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     # Set user command message to be deleted by Bot in default time
     tlg_msg_to_selfdestruct(update_msg)
@@ -3039,13 +3521,19 @@ def cmd_captcha(update: Update, context: CallbackContext):
     img_caption = "Captcha Level: {}\nCaptcha Mode: {}\n" "Captcha Code: {}".format(
         difficulty, captcha_mode, captcha_code
     )
-    tlg_send_image(bot, chat_id, open(captcha["image"], "rb"), img_caption)
+    await tlg_send_image(
+        bot,
+        chat_id,
+        open(captcha["image"], "rb"),
+        img_caption,
+        message_thread_id=update.effective_message.message_thread_id,
+    )
     # Remove sent captcha image file from file system
     if path.exists(captcha["image"]):
         remove(captcha["image"])
 
 
-def cmd_allowuserlist(update: Update, context: CallbackContext):
+async def cmd_allowuserlist(update: Update, context: CallbackContext):
     """Command /allowuserlist message handler. To Global allowed list blind users.
     Just Bot Owner can use it."""
     bot = context.bot
@@ -3063,7 +3551,12 @@ def cmd_allowuserlist(update: Update, context: CallbackContext):
     lang = get_update_user_lang(update_msg.from_user)
     # Check if command was execute by Bot owner
     if (str(user_id) != CONST["BOT_OWNER"]) and (user_alias != CONST["BOT_OWNER"]):
-        tlg_send_selfdestruct_msg(bot, chat_id, CONST["CMD_JUST_ALLOW_OWNER"])
+        await tlg_send_selfdestruct_msg(
+            bot,
+            chat_id,
+            CONST["CMD_JUST_ALLOW_OWNER"],
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     # Check if no argument was provided with the command
     if len(args) == 0:
@@ -3071,43 +3564,91 @@ def cmd_allowuserlist(update: Update, context: CallbackContext):
         l_white_users = file_read(CONST["F_ALLOWED_USERS"])
         bot_msg = "\n".join([str(user) for user in l_white_users])
         bot_msg = "Global Allowed Users List:\n--------------------\n{}".format(bot_msg)
-        tlg_send_msg(bot, chat_id, bot_msg)
-        tlg_send_msg(bot, chat_id, CONST["ALLOWUSERLIST_USAGE"])
+        await tlg_send_msg(
+            bot,
+            chat_id,
+            bot_msg,
+            message_thread_id=update.effective_message.message_thread_id,
+        )
+        await tlg_send_msg(
+            bot,
+            chat_id,
+            CONST["ALLOWUSERLIST_USAGE"],
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     else:
         if len(args) <= 1:
-            tlg_send_msg(bot, chat_id, CONST["ALLOWUSERLIST_USAGE"])
+            await tlg_send_msg(
+                bot,
+                chat_id,
+                CONST["ALLOWUSERLIST_USAGE"],
+                message_thread_id=update.effective_message.message_thread_id,
+            )
             return
         if (args[0] != "add") and (args[0] != "rm"):
-            tlg_send_msg(bot, chat_id, CONST["ALLOWUSERLIST_USAGE"])
+            await tlg_send_msg(
+                bot,
+                chat_id,
+                CONST["ALLOWUSERLIST_USAGE"],
+                message_thread_id=update.effective_message.message_thread_id,
+            )
             return
         add_rm = args[0]
         user = args[1]
         l_white_users = file_read(CONST["F_ALLOWED_USERS"])
         if add_rm == "add":
             if not tlg_is_valid_user_id_or_alias(user):
-                tlg_send_msg(bot, chat_id, "Invalid User ID/Alias.")
+                await tlg_send_msg(
+                    bot,
+                    chat_id,
+                    "Invalid User ID/Alias.",
+                    message_thread_id=update.effective_message.message_thread_id,
+                )
                 return
             if user not in l_white_users:
                 file_write(CONST["F_ALLOWED_USERS"], "{}\n".format(user))
-                tlg_send_msg(bot, chat_id, "User added to Global allowed list.")
+                await tlg_send_msg(
+                    bot,
+                    chat_id,
+                    "User added to Global allowed list.",
+                    message_thread_id=update.effective_message.message_thread_id,
+                )
             else:
-                tlg_send_msg(
-                    bot, chat_id, "The User is already in Global allowed list."
+                await tlg_send_msg(
+                    bot,
+                    chat_id,
+                    "The User is already in Global allowed list.",
+                    message_thread_id=update.effective_message.message_thread_id,
                 )
             return
         if add_rm == "rm":
             if not tlg_is_valid_user_id_or_alias(user):
-                tlg_send_msg(bot, chat_id, "Invalid User ID/Alias.")
+                await tlg_send_msg(
+                    bot,
+                    chat_id,
+                    "Invalid User ID/Alias.",
+                    message_thread_id=update.effective_message.message_thread_id,
+                )
                 return
             if list_remove_element(l_white_users, user):
                 file_write(CONST["F_ALLOWED_USERS"], l_white_users, "w")
-                tlg_send_msg(bot, chat_id, "User removed from Global allowed list.")
+                await tlg_send_msg(
+                    bot,
+                    chat_id,
+                    "User removed from Global allowed list.",
+                    message_thread_id=update.effective_message.message_thread_id,
+                )
             else:
-                tlg_send_msg(bot, chat_id, "The User is not in Global allowed list.")
+                await tlg_send_msg(
+                    bot,
+                    chat_id,
+                    "The User is not in Global allowed list.",
+                    message_thread_id=update.effective_message.message_thread_id,
+                )
 
 
-def cmd_allowgroup(update: Update, context: CallbackContext):
+async def cmd_allowgroup(update: Update, context: CallbackContext):
     """Command /allowgroup message handler. To allow Bot usage in groups when Bot is private.
     Just Bot Owner can use it."""
     bot = context.bot
@@ -3125,7 +3666,12 @@ def cmd_allowgroup(update: Update, context: CallbackContext):
     lang = get_update_user_lang(update_msg.from_user)
     # Check if command was execute by Bot owner
     if (str(user_id) != CONST["BOT_OWNER"]) and (user_alias != CONST["BOT_OWNER"]):
-        tlg_send_selfdestruct_msg(bot, chat_id, CONST["CMD_JUST_ALLOW_OWNER"])
+        await tlg_send_selfdestruct_msg(
+            bot,
+            chat_id,
+            CONST["CMD_JUST_ALLOW_OWNER"],
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     # Check if no argument was provided with the command
     if len(args) == 0:
@@ -3133,45 +3679,95 @@ def cmd_allowgroup(update: Update, context: CallbackContext):
         l_allowed_groups = file_read(CONST["F_ALLOWED_GROUPS"])
         bot_msg = "\n".join([str(group) for group in l_allowed_groups])
         bot_msg = "Allowed Groups:\n--------------------\n{}".format(bot_msg)
-        tlg_send_msg(bot, chat_id, bot_msg)
-        tlg_send_msg(bot, chat_id, CONST["ALLOWGROUP_USAGE"])
+        await tlg_send_msg(
+            bot,
+            chat_id,
+            bot_msg,
+            message_thread_id=update.effective_message.message_thread_id,
+        )
+        await tlg_send_msg(
+            bot,
+            chat_id,
+            CONST["ALLOWGROUP_USAGE"],
+            message_thread_id=update.effective_message.message_thread_id,
+        )
         return
     else:
         if len(args) <= 1:
-            tlg_send_msg(bot, chat_id, CONST["ALLOWGROUP_USAGE"])
+            await tlg_send_msg(
+                bot,
+                chat_id,
+                CONST["ALLOWGROUP_USAGE"],
+                message_thread_id=update.effective_message.message_thread_id,
+            )
             return
         if (args[0] != "add") and (args[0] != "rm"):
-            tlg_send_msg(bot, chat_id, CONST["ALLOWGROUP_USAGE"])
+            await tlg_send_msg(
+                bot,
+                chat_id,
+                CONST["ALLOWGROUP_USAGE"],
+                message_thread_id=update.effective_message.message_thread_id,
+            )
             return
         add_rm = args[0]
         group = args[1]
         l_allowed_groups = file_read(CONST["F_ALLOWED_GROUPS"])
         if add_rm == "add":
             if not tlg_is_valid_group(group):
-                tlg_send_msg(bot, chat_id, "Invalid Group ID.")
+                await tlg_send_msg(
+                    bot,
+                    chat_id,
+                    "Invalid Group ID.",
+                    message_thread_id=update.effective_message.message_thread_id,
+                )
                 return
             if group not in l_allowed_groups:
                 file_write(CONST["F_ALLOWED_GROUPS"], "{}\n".format(group))
-                tlg_send_msg(bot, chat_id, "Group added to allowed list.")
+                await tlg_send_msg(
+                    bot,
+                    chat_id,
+                    "Group added to allowed list.",
+                    message_thread_id=update.effective_message.message_thread_id,
+                )
             else:
-                tlg_send_msg(bot, chat_id, "The group is already in the allowed list.")
+                await tlg_send_msg(
+                    bot,
+                    chat_id,
+                    "The group is already in the allowed list.",
+                    message_thread_id=update.effective_message.message_thread_id,
+                )
             return
         if add_rm == "rm":
             if not tlg_is_valid_group(group):
-                tlg_send_msg(bot, chat_id, "Invalid Group ID.")
+                await tlg_send_msg(
+                    bot,
+                    chat_id,
+                    "Invalid Group ID.",
+                    message_thread_id=update.effective_message.message_thread_id,
+                )
                 return
             if list_remove_element(l_allowed_groups, group):
                 file_write(CONST["F_ALLOWED_GROUPS"], l_allowed_groups, "w")
-                tlg_send_msg(bot, chat_id, "Group removed from allowed list.")
+                await tlg_send_msg(
+                    bot,
+                    chat_id,
+                    "Group removed from allowed list.",
+                    message_thread_id=update.effective_message.message_thread_id,
+                )
             else:
-                tlg_send_msg(bot, chat_id, "The group is not in allowed list.")
+                await tlg_send_msg(
+                    bot,
+                    chat_id,
+                    "The group is not in allowed list.",
+                    message_thread_id=update.effective_message.message_thread_id,
+                )
 
 
 ###############################################################################
 ### Bot automatic remove sent messages thread
 
 
-def th_selfdestruct_messages(bot):
+async def th_selfdestruct_messages(bot: Bot):
     """Handle remove messages sent by the Bot with the timed self-delete function"""
     global to_delete_in_time_messages_list
     while not force_exit:
@@ -3196,17 +3792,18 @@ def th_selfdestruct_messages(bot):
                         sent_msg["Chat_id"], sent_msg["Msg_id"]
                     )
                 )
-                delete_result = tlg_delete_msg(
+                delete_result = await tlg_delete_msg(
                     bot, sent_msg["Chat_id"], sent_msg["Msg_id"]
                 )
                 # The bot has no privileges to delete messages
                 if delete_result["error"] == "Message can't be deleted":
                     lang = get_chat_config(sent_msg["Chat_id"], "Language")
-                    sent_result = tlg_send_msg(
+                    sent_result = await tlg_send_msg(
                         bot,
                         sent_msg["Chat_id"],
                         TEXT[lang]["CANT_DEL_MSG"],
                         reply_to_message_id=sent_msg["Msg_id"],
+                        message_thread_id=sent_msg["Msg_thread_id"]
                     )
                     if sent_result["msg"] is not None:
                         tlg_msg_to_selfdestruct(sent_result["msg"])
@@ -3218,7 +3815,7 @@ def th_selfdestruct_messages(bot):
 ### Handle time to kick users thread
 
 
-def th_time_to_kick_not_verify_users(bot):
+async def th_time_to_kick_not_verify_users(bot: Bot):
     """Check if the time for ban new users that has not completed the captcha has arrived"""
     global new_users
     while not force_exit:
@@ -3289,7 +3886,7 @@ def th_time_to_kick_not_verify_users(bot):
                                 )
                             )
                             # Try to kick the user
-                            kick_result = tlg_kick_user(bot, chat_id, user_id)
+                            kick_result = await tlg_kick_user(bot, chat_id, user_id)
                             if kick_result["error"] == "":
                                 # Kick success
                                 msg_text = TEXT[lang]["NEW_USER_KICK"].format(user_name)
@@ -3302,7 +3899,7 @@ def th_time_to_kick_not_verify_users(bot):
                                 )
                                 # Send kicked message
                                 if rm_result_msg:
-                                    tlg_send_selfdestruct_msg_in(
+                                    await tlg_send_selfdestruct_msg_in(
                                         bot, chat_id, msg_text, CONST["T_FAST_DEL_MSG"]
                                     )
                                 else:
@@ -3472,9 +4069,7 @@ def main():
     msgs_defaults = Defaults(disable_notification=True)
     # Create an event handler (updater) for a Bot with the given Token and get the dispatcher
 
-    app = (
-        Application.builder().token(CONST["TOKEN"]).defaults(msgs_defaults).build()
-    )
+    app = Application.builder().token(CONST["TOKEN"]).defaults(msgs_defaults).build()
 
     app
     # Set Telegram errors handler
@@ -3564,7 +4159,9 @@ def main():
             cmd_remove_welcome_msg,
         )
     )
-    app.add_handler(CommandHandler("remove_all_msg_kick_on", cmd_remove_all_msg_kick_on))
+    app.add_handler(
+        CommandHandler("remove_all_msg_kick_on", cmd_remove_all_msg_kick_on)
+    )
     app.add_handler(
         CommandHandler("remove_all_msg_kick_off", cmd_remove_all_msg_kick_off)
     )
