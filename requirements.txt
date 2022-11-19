@@ -1,2 +1,2 @@
-python_telegram_bot==13.5
+python-telegram-bot @ git+https://github.com/python-telegram-bot/python-telegram-bot@3940b531105d6396f368c4959eebee04f47e9931
 multicolorcaptcha==1.2.0
