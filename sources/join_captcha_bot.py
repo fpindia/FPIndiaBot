@@ -3426,7 +3426,7 @@ def th_time_to_kick_not_verify_users(bot):
 ### Telegram Errors Callback
 
 
-def tlg_error_callback(update, context):
+async def tlg_error_callback(update, context):
     """Telegram errors handler."""
     try:
         raise context.error
@@ -3472,128 +3472,128 @@ def main():
     msgs_defaults = Defaults(disable_notification=True)
     # Create an event handler (updater) for a Bot with the given Token and get the dispatcher
 
-    application = (
+    app = (
         Application.builder().token(CONST["TOKEN"]).defaults(msgs_defaults).build()
     )
 
-    dp = application
+    app
     # Set Telegram errors handler
-    dp.add_error_handler(tlg_error_callback)
+    app.add_error_handler(tlg_error_callback)
     # Set to dispatcher all expected commands messages handler
-    dp.add_handler(CommandHandler("start", cmd_start))
-    dp.add_handler(CommandHandler("help", cmd_help))
-    dp.add_handler(CommandHandler("commands", cmd_commands))
-    dp.add_handler(CommandHandler("checkcfg", cmd_checkcfg))
-    dp.add_handler(
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("commands", cmd_commands))
+    app.add_handler(CommandHandler("checkcfg", cmd_checkcfg))
+    app.add_handler(
         CommandHandler(
             "connect",
             cmd_connect,
         )
     )
-    dp.add_handler(CommandHandler("disconnect", cmd_disconnect))
-    dp.add_handler(
+    app.add_handler(CommandHandler("disconnect", cmd_disconnect))
+    app.add_handler(
         CommandHandler(
             "language",
             cmd_language,
         )
     )
-    dp.add_handler(
+    app.add_handler(
         CommandHandler(
             "time",
             cmd_time,
         )
     )
-    dp.add_handler(
+    app.add_handler(
         CommandHandler(
             "difficulty",
             cmd_difficulty,
         )
     )
-    dp.add_handler(
+    app.add_handler(
         CommandHandler(
             "captcha_mode",
             cmd_captcha_mode,
         )
     )
-    dp.add_handler(
+    app.add_handler(
         CommandHandler(
             "welcome_msg",
             cmd_welcome_msg,
         )
     )
-    dp.add_handler(
+    app.add_handler(
         CommandHandler(
             "welcome_msg_time",
             cmd_welcome_msg_time,
         )
     )
-    dp.add_handler(
+    app.add_handler(
         CommandHandler(
             "captcha_poll",
             cmd_captcha_poll,
         )
     )
-    dp.add_handler(
+    app.add_handler(
         CommandHandler(
             "restrict_non_text",
             cmd_restrict_non_text,
         )
     )
-    dp.add_handler(
+    app.add_handler(
         CommandHandler(
             "add_ignore",
             cmd_add_ignore,
         )
     )
-    dp.add_handler(
+    app.add_handler(
         CommandHandler(
             "remove_ignore",
             cmd_remove_ignore,
         )
     )
-    dp.add_handler(CommandHandler("ignore_list", cmd_ignore_list))
-    dp.add_handler(
+    app.add_handler(CommandHandler("ignore_list", cmd_ignore_list))
+    app.add_handler(
         CommandHandler(
             "remove_solve_kick_msg",
             cmd_remove_solve_kick_msg,
         )
     )
-    dp.add_handler(
+    app.add_handler(
         CommandHandler(
             "remove_welcome_msg",
             cmd_remove_welcome_msg,
         )
     )
-    dp.add_handler(CommandHandler("remove_all_msg_kick_on", cmd_remove_all_msg_kick_on))
-    dp.add_handler(
+    app.add_handler(CommandHandler("remove_all_msg_kick_on", cmd_remove_all_msg_kick_on))
+    app.add_handler(
         CommandHandler("remove_all_msg_kick_off", cmd_remove_all_msg_kick_off)
     )
-    dp.add_handler(CommandHandler("url_enable", cmd_url_enable))
-    dp.add_handler(CommandHandler("url_disable", cmd_url_disable))
-    dp.add_handler(CommandHandler("enable", cmd_enable))
-    dp.add_handler(CommandHandler("disable", cmd_disable))
-    dp.add_handler(CommandHandler("chatid", cmd_chatid))
-    dp.add_handler(CommandHandler("version", cmd_version))
-    dp.add_handler(CommandHandler("about", cmd_about))
+    app.add_handler(CommandHandler("url_enable", cmd_url_enable))
+    app.add_handler(CommandHandler("url_disable", cmd_url_disable))
+    app.add_handler(CommandHandler("enable", cmd_enable))
+    app.add_handler(CommandHandler("disable", cmd_disable))
+    app.add_handler(CommandHandler("chatid", cmd_chatid))
+    app.add_handler(CommandHandler("version", cmd_version))
+    app.add_handler(CommandHandler("about", cmd_about))
     if CONST["BOT_OWNER"] != "XXXXXXXXX":
-        dp.add_handler(CommandHandler("captcha", cmd_captcha))
-        dp.add_handler(
+        app.add_handler(CommandHandler("captcha", cmd_captcha))
+        app.add_handler(
             CommandHandler(
                 "allowuserlist",
                 cmd_allowuserlist,
             )
         )
     if (CONST["BOT_OWNER"] != "XXXXXXXXX") and CONST["BOT_PRIVATE"]:
-        dp.add_handler(
+        app.add_handler(
             CommandHandler(
                 "allowgroup",
                 cmd_allowgroup,
             )
         )
     # Set to dispatcher a not-command text messages handler
-    dp.add_handler(MessageHandler(filters.TEXT, msg_nocmd, block=False))
+    app.add_handler(MessageHandler(filters.TEXT, msg_nocmd, block=False))
     # Set to dispatcher not text messages handler
-    dp.add_handler(
+    app.add_handler(
         MessageHandler(
             filters.PHOTO
             | filters.AUDIO
@@ -3607,29 +3607,29 @@ def main():
         )
     )
     # Set to dispatcher a new member join the group and member left the group events handlers
-    dp.add_handler(
+    app.add_handler(
         ChatMemberHandler(chat_bot_status_change, ChatMemberHandler.MY_CHAT_MEMBER)
     )
-    dp.add_handler(
+    app.add_handler(
         ChatMemberHandler(chat_member_status_change, ChatMemberHandler.ANY_CHAT_MEMBER)
     )
     # Set to dispatcher "USER joined the group" messages event handlers
-    dp.add_handler(
+    app.add_handler(
         MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, msg_user_joined_group)
     )
     # Set to dispatcher inline keyboard callback handler for new captcha request and
     # button captcha challenge
-    dp.add_handler(CallbackQueryHandler(key_inline_keyboard))
+    app.add_handler(CallbackQueryHandler(key_inline_keyboard))
     # Set to dispatcher users poll vote handler
-    dp.add_handler(PollAnswerHandler(receive_poll_answer, block=False))
+    app.add_handler(PollAnswerHandler(receive_poll_answer, block=False))
     # Launch the Bot ignoring pending messages (clean=True) and get all updates (allowed_uptades=[])
     if CONST["WEBHOOK_HOST"] == "None":
         printts("Setup Bot for Polling.")
 
-        dp.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
+        app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
     else:
         printts("Setup Bot for Webhook.")
-        dp.run_webhook(
+        app.run_webhook(
             drop_pending_updates=True,
             listen="0.0.0.0",
             port=CONST["WEBHOOK_PORT"],
@@ -3643,8 +3643,8 @@ def main():
         )
     printts("Bot setup completed. Bot is now running.")
     # Launch delete mesages and kick users threads
-    th_0 = Thread(target=th_selfdestruct_messages, args=(updater.bot,))
-    th_1 = Thread(target=th_time_to_kick_not_verify_users, args=(updater.bot,))
+    th_0 = Thread(target=th_selfdestruct_messages, args=(app.bot,))
+    th_1 = Thread(target=th_time_to_kick_not_verify_users, args=(app.bot,))
     th_0.name = "th_selfdestruct_messages"
     th_1.name = "th_time_to_kick_not_verify_users"
     th_0.start()
